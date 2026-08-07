@@ -290,14 +290,13 @@ class PromptFormatter:
 
         del features[NodeFeatures.ON_BORDER]
 
-        features[NodeFeatures.STREET_WIDTH] = (
-            f"{features[NodeFeatures.STREET_WIDTH]} ft"
-        )
-
-        if NodeFeatures.WALK_LIGHT_DURATION in features:
-            features[NodeFeatures.WALK_LIGHT_DURATION] = (
-                f"{features[NodeFeatures.WALK_LIGHT_DURATION]} s"
-            )
+        # street_width and walk_light_duration arrive from the map data with
+        # their unit already attached -- "10 m", "30 s". Appending " ft" and
+        # " s" here produced "10 m ft" and "30 s s", and the surrounding prompt
+        # asserts "All units are in feets", so a model reading a 10 m crossing
+        # as 10 feet was off by a factor of three. Pass the values through and
+        # let them state their own unit. Nothing computes with them; they only
+        # ever appear in this block and in the spoken node description.
 
         return str_dict(
             {"node": f"{node.id} ({node.get_llm_description()})", "features": features}

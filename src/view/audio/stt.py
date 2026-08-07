@@ -10,8 +10,8 @@ from typing import Optional, Set
 
 import speech_recognition as sr
 
+from src.config import config
 from src.modules_repository import Module
-from google.cloud import speech  # unused, but needed for pre-loading the module
 
 # STT_BACKEND selects the recogniser. "google" is the upstream MapIO behaviour
 # (cloud, needs GOOGLE_SPEECH_CLOUD_KEY_FILE). "apple" uses Apple's on-device
@@ -37,6 +37,105 @@ BACKEND = os.getenv("STT_BACKEND", "google").lower()
 APPLE_BIN = os.getenv("STT_APPLE_BIN", "tools/macos_stt/legacyspeechcli.app")
 STT_SERVER = os.getenv("STT_SERVER", "").rstrip("/")
 
+if BACKEND == "google":
+    # Importing this up front is deliberate upstream: it keeps the first
+    # recognize_google_cloud() call from paying the import cost in the middle
+    # of a recording. Conditional now, because on the "apple" path it is a
+    # cloud library that is never called -- and it pulls in pkg_resources,
+    # which setuptools no longer installs into a fresh venv by default, so a
+    # local-only install died at import on a dependency it does not use.
+    from google.cloud import speech  # noqa: F401  (imported for its side effect)
+
+
+def input_devices() -> list:
+    """[(index, name)] for capture devices only.
+
+    Windows lists playback and capture in one table, so devices with no input
+    channels are dropped -- opening one of those fails at record time with an
+    error that does not say why.
+    """
+
+    devices = []
+    audio = sr.Microphone.get_pyaudio().PyAudio()
+
+    try:
+        for index, name in enumerate(sr.Microphone.list_microphone_names()):
+            try:
+                info = audio.get_device_info_by_index(index)
+            except Exception:
+                continue
+            if info.get("maxInputChannels", 0) > 0:
+                devices.append((index, name))
+    finally:
+        audio.terminate()
+
+    return devices
+
+
+def distinct_devices(devices: list) -> list:
+    """[(index, name)] with one entry per physical device, lowest index kept.
+
+    Windows exposes the same microphone once per host API -- MME, DirectSound,
+    WASAPI, WDM-KS -- so a three-microphone machine lists forty entries and
+    "HUE" matches four of them. They are the same hardware; the lowest index is
+    the MME one, which is the most compatible with PyAudio.
+    """
+
+    # Longest name first, because MME truncates names to 31 characters while
+    # the other APIs report them in full: "Microphone (Anker PowerConf C20" and
+    # "Microphone (Anker PowerConf C200" are one device, and one name is a
+    # prefix of the other. Keeping the longest name and the lowest index gives
+    # the readable label with the MME device number.
+    canonical: list = []
+    for index, name in sorted(devices, key=lambda d: (-len(d[1]), d[0])):
+        for position, (known, best) in enumerate(canonical):
+            if known.startswith(name) or name.startswith(known):
+                canonical[position] = (known, min(best, index))
+                break
+        else:
+            canonical.append((name, index))
+
+    return sorted((index, name) for name, index in canonical)
+
+
+def print_devices(devices: list) -> None:
+    for index, name in distinct_devices(devices):
+        print(f"   {index:3}: {name}")
+
+
+def resolve_microphone(requested: Optional[str]) -> Optional[int]:
+    """--microphone as a device number or part of a name. None -> system default.
+
+    Same reasoning as --camera: the default input device is often not the one
+    pointed at the user, and a recording of silence surfaces as "No speech
+    detected" from the recogniser, which does not hint that the wrong device
+    was open.
+    """
+
+    if requested is None:
+        return None
+
+    if requested.isnumeric():
+        return int(requested)
+
+    # Match against the deduplicated list, so a device listed once per host API
+    # counts as one candidate rather than four.
+    devices = distinct_devices(input_devices())
+    matches = [(i, n) for i, n in devices if requested.lower() in n.lower()]
+
+    if len(matches) == 1:
+        index, name = matches[0]
+        print(f"Microphone: {index} ({name}), matched on {requested!r}.")
+        return index
+
+    if not matches:
+        print(f"\nNo microphone matches {requested!r}. Available:")
+    else:
+        print(f"\n{requested!r} is ambiguous, it matches different devices:")
+    print_devices(devices)
+    print("Falling back to the system default.")
+    return None
+
 
 class STT(Module):
     TIMEOUT = 20
@@ -51,8 +150,15 @@ class STT(Module):
         self.recognizer = sr.Recognizer()
         self.recognizer.pause_threshold = STT.FINAL_SILENCE_DURATION
 
-        self.microphone = sr.Microphone()
+        device = resolve_microphone(config.microphone)
+        self.microphone = sr.Microphone(device_index=device)
         self.commands: Set[str] = set()
+
+        # Say which device is actually open. "No speech detected" from the
+        # recogniser looks like a speaking problem, not a routing one.
+        if device is None:
+            print("Microphone: system default. Choose another with --microphone:")
+            print_devices(input_devices())
 
         self.__recording_audio = False
         self.__processing_audio = False

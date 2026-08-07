@@ -42,6 +42,21 @@ mapio_parser.add_argument(
 )
 
 mapio_parser.add_argument(
+    "--camera",
+    help='Camera to use, skipping the selection prompt: either a device number '
+    '(--camera 1) or part of its name (--camera "HUE"). Prefer the name -- '
+    "device numbers shift when a virtual camera starts or stops. The prompt "
+    "prints the right value once you have found a working camera.",
+    default=None,
+)
+mapio_parser.add_argument(
+    "--microphone",
+    help='Microphone to record from: a device number (--microphone 2) or part '
+    'of its name (--microphone "Anker"). Defaults to the system input device, '
+    "which is often not the one pointed at you.",
+    default=None,
+)
+mapio_parser.add_argument(
     "--debug",
     help="Enable debug mode.",
     action="store_true",

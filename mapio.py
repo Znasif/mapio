@@ -254,7 +254,12 @@ class MapIOController:
             return self.tts.start_calculating_route_loop()
 
         if action == RouteAction.ERROR or waypoints is None:
-            return self.tts.stop_calculating_route_loop()
+            # Unfreeze whatever asked for this route before saying anything: a
+            # navigator that requested a reroute pauses until one arrives, and
+            # nothing else ever clears that.
+            self.navigation_controller.route_failed()
+            self.tts.stop_calculating_route_loop()
+            return self.tts.navigation_error()
 
         # New route
         self.tts.stop_calculating_route_loop()

@@ -3,6 +3,30 @@ from typing import Any, Dict, List, Optional, Union
 from src.utils import Coords, Position, StrEnum
 
 
+SPOKEN_UNITS = {"m": "meter", "s": "second", "ft": "foot", "cm": "centimeter"}
+
+
+def spoken_quantity(value: Any) -> str:
+    """'10 m' -> '10 meters'. Values carry their own unit; say that one.
+
+    The map data stores these with the unit attached, and the descriptions used
+    to append a second, contradicting one -- "10 m feet wide" for a crossing
+    that is 10 metres, about 33 feet. Nothing computes with these (they appear
+    only here and in the LLM prompt), so this is a wording fix, not a
+    conversion: the number is spoken with the unit the data actually claims.
+    """
+
+    text = str(value).strip()
+    number, _, unit = text.rpartition(" ")
+
+    word = SPOKEN_UNITS.get(unit)
+    if not number or word is None:
+        return text  # no unit we recognise -- say it as it is written
+
+    plural = "" if number in ("1", "1.0") else "s"
+    return f"{number} {word}{plural}"
+
+
 class Features(StrEnum):
     ON_BORDER = "on_border"
     CROSSWALK = "crosswalk"
@@ -111,10 +135,10 @@ class Node(Position):
             if walk_light:
                 description += f" and walk lights"
                 if walk_light_duration != "unknown":
-                    description += f" that last {walk_light_duration} seconds"
+                    description += f" that last {spoken_quantity(walk_light_duration)}"
 
         if street_width != "unknown":
-            description += f", {street_width} feet wide"
+            description += f", {spoken_quantity(street_width)} wide"
 
         return description
 

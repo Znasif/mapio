@@ -47,6 +47,13 @@ class Navigator(ABC):
             destination=destination,
         )
 
+    def route_failed(self) -> None:
+        """A reroute this navigator asked for never arrived.
+
+        Nothing to undo by default; subclasses that pause themselves while
+        waiting have to resume here, or they wait forever.
+        """
+
     def _waypoint_reached(self, waypoint: WayPoint) -> None:
         self.on_action(NavigationAction.WAYPOINT_REACHED, waypoint=waypoint)
 

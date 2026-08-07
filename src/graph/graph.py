@@ -29,6 +29,37 @@ class ReferenceSystem:
         self.east = east
 
 
+# ROUTING selects where the shortest path comes from. "local" walks the map's
+# own graph; "google" restores the Routes API call, for comparison.
+#
+# Local is the default because the Routes API was never supplying a route in any
+# meaningful sense. Look at GOOGLE_ROUTES_API_FIELDS below: every field is
+# commented out except startLocation and endLocation -- navigationInstruction
+# included -- so what came back was a list of leg endpoints, which
+# __process_instructions immediately snapped back onto this graph and described
+# in its own words. Meanwhile precompute_distances() has already run
+# Floyd-Warshall over every node at construction and get_min_path() reads the
+# answer straight out of the predecessor matrix. The request was asking a remote
+# service to solve a problem this object had already solved.
+#
+# It also sat on the interaction hot path: StreetByStreetNavigator asks for a
+# new route after NEXT_STEP_INTERVAL (1 second) of not progressing toward the
+# next waypoint, and a finger on a tactile map pauses constantly.
+ROUTING = os.getenv("ROUTING", "local").lower()
+
+# Two consecutive legs are folded into one when their headings agree to within
+# this cosine (~10 degrees). Google collapsed same-street runs into a single
+# step; a node-by-node path emits one leg per intersection, which would make the
+# navigator announce at every corner of a straight walk.
+#
+# Measured on detroit_conant, hotel -> The Italian Table: 0.996 leaves 11
+# waypoints including two consecutive "east ... until Revere Avenue" for one
+# straight walk, 0.985 gives 10, 0.95 gives 9, and 0.90 also gives 9. Real turns
+# on these maps are ~90 degrees, so nothing near this threshold is a turn -- the
+# flat stretch from 0.95 to 0.90 is that headroom. 0.985 takes the duplicate
+# without reaching toward the turns.
+COLLINEAR_COS = 0.985
+
 GOOGLE_ROUTES_API_FIELDS = [
     # "routes.legs.steps.navigationInstruction",
     "routes.legs.steps.startLocation",
@@ -311,6 +342,83 @@ class Graph(Module):
 
         self.__on_route(RouteAction.CALCULATING_ROUTE, start, street_by_street, None)
 
+        try:
+            if ROUTING == "google":
+                legs = self.__google_legs(start, destination, route_index)
+            else:
+                legs = self.__local_legs(start, destination)
+        except Exception as e:
+            print(f"Routing failed: {e}")
+            legs = []
+
+        if len(legs) == 0:
+            # This has to reach the controller rather than raise. guide_to_*
+            # runs on its own thread, so an exception here dies unlogged, and
+            # the navigator that requested the route stays frozen until a new
+            # one replaces it -- leaving guidance permanently silent after a
+            # single failure. See NavigationController.route_failed().
+            return self.__on_route(RouteAction.ERROR, start, street_by_street, None)
+
+        self.__on_route(
+            RouteAction.ON_ROUTE,
+            start,
+            street_by_street,
+            self.__process_instructions(legs),
+        )
+
+    def __local_legs(
+        self, start: Coords, destination: Coords
+    ) -> List[Tuple[Coords, Coords]]:
+        """Shortest path over this graph, as consecutive (from, to) legs.
+
+        get_min_path walks the predecessor matrix precompute_distances() filled
+        at construction, so this is a lookup, not a search. Coverage differs
+        from the Routes API on purpose: this stays on the streets that are in
+        the map, which for a tactile map is the surface the finger is on.
+        """
+
+        start_node, _ = self.get_nearest_node(start)
+        destination_node, _ = self.get_nearest_node(destination)
+
+        path = self.get_min_path(start_node, destination_node)
+        if len(path) == 0:
+            return []
+
+        # start and destination are the real endpoints; the node path only
+        # covers the intersections between them.
+        points = [start] + [node.coords for node in path] + [destination]
+        legs = [(a, b) for a, b in zip(points, points[1:]) if a != b]
+
+        return self.__merge_collinear(legs)
+
+    @staticmethod
+    def __merge_collinear(
+        legs: List[Tuple[Coords, Coords]]
+    ) -> List[Tuple[Coords, Coords]]:
+        """Fold consecutive legs that keep going the same way into one leg.
+
+        Crossing counts survive: __process_instructions derives them with
+        get_crossings over the merged leg's endpoints, so a folded run of three
+        blocks describes itself as "for 3 intersections" instead of announcing
+        three times.
+        """
+
+        merged: List[Tuple[Coords, Coords]] = []
+        for leg in legs:
+            if merged:
+                previous = merged[-1]
+                v1 = (previous[1] - previous[0]).normalized()
+                v2 = (leg[1] - leg[0]).normalized()
+                if v1[0] * v2[0] + v1[1] * v2[1] >= COLLINEAR_COS:
+                    merged[-1] = (previous[0], leg[1])
+                    continue
+            merged.append(leg)
+
+        return merged
+
+    def __google_legs(
+        self, start: Coords, destination: Coords, route_index: int
+    ) -> List[Tuple[Coords, Coords]]:
         start_latlng = coords_to_latlng(self.latlng_reference, start)
         destination_latlng = coords_to_latlng(self.latlng_reference, destination)
 
@@ -344,23 +452,34 @@ class Graph(Module):
             },
         )
 
-        instructions = (
+        steps = (
             response.json()
             .get("routes", [dict()] * (route_index + 1))[route_index]
             .get("legs", [dict()])[0]
             .get("steps", [])
         )
 
-        if len(instructions) == 0:
-            self.__on_route(RouteAction.ERROR, start, street_by_street, None)
-            raise ValueError("No route found")
-
-        self.__on_route(
-            RouteAction.ON_ROUTE,
-            start,
-            street_by_street,
-            self.__process_instructions(instructions),
-        )
+        # Only the endpoints are requested (GOOGLE_ROUTES_API_FIELDS), and
+        # __process_instructions snaps them back onto this graph anyway.
+        return [
+            (
+                latlng_to_coords(
+                    self.latlng_reference,
+                    Coords(
+                        step["startLocation"]["latLng"]["latitude"],
+                        step["startLocation"]["latLng"]["longitude"],
+                    ),
+                ),
+                latlng_to_coords(
+                    self.latlng_reference,
+                    Coords(
+                        step["endLocation"]["latLng"]["latitude"],
+                        step["endLocation"]["latLng"]["longitude"],
+                    ),
+                ),
+            )
+            for step in steps
+        ]
 
     def get_min_path(self, start: Node, destination: Node) -> List[Node]:
         if self.prev_distances[start.id][destination.id] == None:
@@ -409,26 +528,20 @@ class Graph(Module):
             raise ValueError("Points are not connected")
         return d
 
-    def __process_instructions(self, steps: List[Dict[str, Any]]) -> List[WayPoint]:
+    def __process_instructions(
+        self, legs: List[Tuple[Coords, Coords]]
+    ) -> List[WayPoint]:
+        """Turn (from, to) legs in map coordinates into spoken waypoints.
+
+        Shared by both routing modes: the prose, the headings, the crossing
+        counts and the distances have always been generated here, from this
+        graph, whichever source supplied the legs.
+        """
+
         waypoints: List[WayPoint] = list()
 
         previous_versor = Coords(0, 0)
-        for i, step in enumerate(steps):
-            from_coords = latlng_to_coords(
-                self.latlng_reference,
-                Coords(
-                    step["startLocation"]["latLng"]["latitude"],
-                    step["startLocation"]["latLng"]["longitude"],
-                ),
-            )
-            to_coords = latlng_to_coords(
-                self.latlng_reference,
-                Coords(
-                    step["endLocation"]["latLng"]["latitude"],
-                    step["endLocation"]["latLng"]["longitude"],
-                ),
-            )
-
+        for i, (from_coords, to_coords) in enumerate(legs):
             versor = (to_coords - from_coords).normalized()
 
             from_coords, start = self.snap_to_graph(from_coords, force=True)

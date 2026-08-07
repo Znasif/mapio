@@ -84,6 +84,12 @@ class NavigationController:
             elif self.navigator.is_running():
                 self.navigator.update(position, ignore_not_moving)
 
+    def route_failed(self) -> None:
+        """Tell the current navigator its requested reroute is not coming."""
+        with self.__lock:
+            if self.navigator is not None:
+                self.navigator.route_failed()
+
     def clear(self) -> None:
         with self.__lock:
             self.navigator = None

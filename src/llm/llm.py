@@ -214,7 +214,15 @@ class LLM(Module):
                     response_message.content is not None
                     and len(response_message.content) > 0
                 ):
-                    output += response_message.content + "\n"
+                    # Every round's text is concatenated, and Gemma frequently
+                    # emits its whole answer alongside the tool call and then
+                    # again after seeing the tool result -- so the user hears
+                    # the same sentences twice. Skip a block already present
+                    # rather than keeping only the last round, which would drop
+                    # the answer entirely when a model says its piece on the
+                    # tool round and nothing after.
+                    if response_message.content.strip() not in output:
+                        output += response_message.content + "\n"
 
                 self.history.append(convert_assistant_message(response_message))
 

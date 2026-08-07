@@ -131,3 +131,14 @@ class StreetByStreetNavigator(Navigator):
         print("New route needed")
         self.__waiting_new_route = True
         return super()._new_route_needed(start, destination)
+
+    def route_failed(self) -> None:
+        # update() returns early while this is set, and the flag was only ever
+        # cleared by being replaced: a successful reroute builds a whole new
+        # navigator and drops this one. When the reroute fails instead, nothing
+        # replaces it, so without this the object stays frozen -- no
+        # announcements, no further reroute attempts, silence for the rest of
+        # the session. Resuming keeps the old waypoints live and lets the stall
+        # timer ask again.
+        print("Reroute failed; continuing on the previous route")
+        self.__waiting_new_route = False

@@ -326,20 +326,31 @@ class TTS(Module):
 
     def __announce_text(self, announcement: TextAnnouncement) -> None:
         with self.is_speaking_cond:
-            self.engine.iterate()
             self.__is_speaking.set()
             self._timestamps[announcement.category] = time.time()
 
         print(announcement.text)
 
-        # Should block until the utterance is finished
-        # But on MacOS, the engine doesn't seem to be blocking
-        # The while loop is a workaround
         self.engine.say(
             announcement.text,
             name=announcement.id,
         )
 
-        with self.is_speaking_cond:
-            while self.is_speaking() and self.__running.is_set():
-                self.is_speaking_cond.wait()
+        # Pump the engine for as long as it is speaking. iterate() drives the
+        # driver's event loop, and on SAPI5 that loop is what delivers
+        # finished-utterance -- so it has to run repeatedly, and it has to run
+        # after say() has queued something.
+        #
+        # This used to call iterate() once, before say(), and then block on
+        # is_speaking_cond. Each call therefore pumped the *previous*
+        # utterance, and the current one was never pumped at all: on Windows
+        # nothing was ever spoken and the loop thread waited forever on the
+        # first announcement. It survived on macOS because the nsss driver
+        # does not depend on the pump to report completion, which is what the
+        # comment about "MacOS doesn't seem to be blocking" was describing.
+        #
+        # Not held under is_speaking_cond: __on_utterance_finished acquires it
+        # to clear the flag, so pumping while holding it would deadlock.
+        while self.is_speaking() and self.__running.is_set():
+            self.engine.iterate()
+            time.sleep(0.01)

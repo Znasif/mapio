@@ -1,6 +1,6 @@
 import argparse
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class Lang(Enum):
@@ -59,6 +59,12 @@ class Config:
         self.prompt_file: str = ""
         "Path to the prompt yaml. Empty means res/prompt_<lang>.yaml."
 
+        self.camera: Optional[str] = None
+        "Camera device number or name fragment. None means ask."
+
+        self.microphone: Optional[str] = None
+        "Microphone device number or name fragment. None means system default."
+
     @property
     def inches_per_feet(self) -> float:
         """
@@ -83,6 +89,8 @@ class Config:
         self.lang = args.lang.value
         self.tts_rate = args.tts_rate
         self.prompt_file = args.prompt or ""
+        self.camera = args.camera
+        self.microphone = args.microphone
 
     def load_model(self, model: Dict[str, Any]) -> None:
         """
