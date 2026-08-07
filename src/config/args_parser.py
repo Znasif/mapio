@@ -15,6 +15,13 @@ mapio_parser.add_argument(
     "--lang", help="System language", type=Lang, choices=list(Lang), default=Lang.EN
 )
 mapio_parser.add_argument(
+    "--prompt",
+    help="Path to the prompt yaml. Defaults to res/prompt_<lang>.yaml, which is "
+    "upstream MapIO's. Local runs should point this at the prompt the benchmark "
+    "was run with, e.g. res/prompt_en_fixed.yaml.",
+    default=None,
+)
+mapio_parser.add_argument(
     "--tts-rate",
     help="TTS speed rate (words per minute).",
     type=int,

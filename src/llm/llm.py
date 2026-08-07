@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Iterable, List, Optional
 
 from openai import OpenAI, OpenAIError
@@ -25,18 +26,54 @@ class LLM(Module):
     MAX_TOKENS = 2000
     DEFAULT_TEMPERATURE = 0.0
 
+    QUESTION_MARKER = "###Question###"
+    INSTRUCTIONS_MARKER = "###Instructions###"
+
     def __init__(
         self,
         prompt_file: str,
         context: Dict[str, str],
         temperature: float = DEFAULT_TEMPERATURE,
+        formatter: Optional[PromptFormatter] = None,
     ) -> None:
         super().__init__()
 
         self.temperature = temperature
 
-        self.client = OpenAI()
-        self.prompt_formatter = PromptFormatter(prompt_file, self.__graph)
+        # LLM_BASE_URL switches to a local OpenAI-compatible server (llama.cpp
+        # router). LLM_MODEL selects the tier ("l3"). Unset -> OpenAI, as before.
+        base_url = os.environ.get("LLM_BASE_URL")
+        if base_url:
+            self.client = OpenAI(
+                base_url=base_url,
+                api_key=os.environ.get("OPENAI_API_KEY") or "local",
+            )
+        else:
+            self.client = OpenAI()
+        self.model = os.environ.get("LLM_MODEL") or LLM.MODEL
+
+        # Gemma emits chain-of-thought by default, and with `tools` present the
+        # CoT eats the whole token budget before any call is emitted;
+        # reasoning_budget is silently ignored once tools are present. The chat
+        # template kwarg is the only reliable off-switch (design doc §8.0).
+        self.extra_body: Dict[str, object] = (
+            {"chat_template_kwargs": {"enable_thinking": False}} if base_url else {}
+        )
+
+        # Local serving fits an 8192-token window (design doc §8), which two
+        # MapIO habits overflow: re-injecting the full instruction block after
+        # every tool round, and keeping every past turn's per-question
+        # scaffolding verbatim. Both default off/compacted in local mode and
+        # unchanged against OpenAI; override with LLM_REINJECT_INSTRUCTIONS=1 /
+        # LLM_COMPACT_HISTORY=0 to measure the original behavior.
+        self.reinject_instructions = (
+            os.environ.get("LLM_REINJECT_INSTRUCTIONS", "0" if base_url else "1") == "1"
+        )
+        self.compact_history_enabled = (
+            os.environ.get("LLM_COMPACT_HISTORY", "1" if base_url else "0") == "1"
+        )
+
+        self.prompt_formatter = formatter or PromptFormatter(prompt_file, self.__graph)
 
         self.context = context
         self.history: List[ChatCompletionMessageParam] = list()
@@ -60,7 +97,36 @@ class LLM(Module):
         self.history.clear()
         self.history.append(self.prompt_formatter.get_main_prompt(self.context))
 
+    def __compact_history(self) -> None:
+        """Cut PAST turns down to their question core.
+
+        Each user turn carries per-question scaffolding — retrieved candidates,
+        the position update, a restated instruction block — that only matters
+        for the round it was sent in. Kept verbatim, a multi-turn session blows
+        the 8192-token window by turn 3 (measured: 18.5K tokens at turn 9 on
+        the Detroit study session). Past user turns shrink to their
+        ###Question### section and past instruction re-injections are dropped;
+        assistant and tool messages stay, because they carry the facts that
+        follow-ups refer back to (bookmarks, chosen restaurants, distances).
+        This forfeits llama.cpp prefix-cache reuse across turns (§6.1), but
+        fitting the window at all comes first.
+        """
+        compacted: List[ChatCompletionMessageParam] = []
+        for msg in self.history:
+            content = msg.get("content")
+            if msg.get("role") == "user" and isinstance(content, str):
+                if content.lstrip().startswith(LLM.INSTRUCTIONS_MARKER):
+                    continue
+                if LLM.QUESTION_MARKER in content:
+                    core = content.split(LLM.QUESTION_MARKER, 1)[1]
+                    core = core.split(LLM.INSTRUCTIONS_MARKER, 1)[0]
+                    msg = dict(msg, content=LLM.QUESTION_MARKER + core.rstrip() + "\n")
+            compacted.append(msg)
+        self.history[:] = compacted
+
     def ask(self, question: str, position: Optional[PositionInfo]) -> Optional[str]:
+        if self.compact_history_enabled:
+            self.__compact_history()
         new_message = self.prompt_formatter.get_user_message(question, position)
         self.history.append(new_message)
         self.running = True
@@ -72,11 +138,12 @@ class LLM(Module):
                 print("Sending API request...")
 
                 response = self.client.chat.completions.create(
-                    model=LLM.MODEL,
+                    model=self.model,
                     max_tokens=LLM.MAX_TOKENS,
                     temperature=self.temperature,
                     messages=self.history,
                     tools=self.prompt_formatter.get_tool_calls(),
+                    extra_body=self.extra_body,
                 )
                 self.usage.append(response.usage)
 
@@ -101,7 +168,10 @@ class LLM(Module):
                         self.history.append(
                             self.prompt_formatter.handle_tool_call(tool_call)
                         )
-                    self.history.append(self.prompt_formatter.get_instructions_prompt())
+                    if self.reinject_instructions:
+                        self.history.append(
+                            self.prompt_formatter.get_instructions_prompt()
+                        )
 
                 else:
                     break

@@ -1,0 +1,97 @@
+{
+  "timestamp": "20260805_142007",
+  "label": "arm1_curated_stt",
+  "server": "http://localhost:11434/v1",
+  "model": "l3",
+  "k": 8,
+  "formatter": "curated",
+  "input": "text",
+  "prompt": "prompt_en_fixed.yaml",
+  "benchmark": "manifest.json",
+  "warmup_sec": 23.69,
+  "stt_hints": true,
+  "grades": [
+    "deceptively_wrong",
+    "not_replying",
+    "blatantly_wrong",
+    "partial_incomplete",
+    "correct_not_optimal",
+    "correct"
+  ],
+  "gpt4o_bar": "94.74% correct + 5.26% correct_not_optimal (paper Table 4, iteration 8, New York map)",
+  "results": [
+    {
+      "id": "DT-SESSION",
+      "map": "detroit_conant",
+      "turns": [
+        {
+          "id": "DT-T2",
+          "utterance": "You will be staying at the Sheraton Commander Grand Lake Hotel is this hotel on the map",
+          "spoken": {
+            "wav": "benchmark/audio/DT-T2.wav",
+            "reference_utterance": "I will be staying at the Sheraton Commander Grand Lake hotel. Is this hotel on the map?",
+            "sent_as": "transcript",
+            "stt_sec": 2.08,
+            "hints": 51,
+            "wer_errors": 1,
+            "wer_words": 17,
+            "wer_pct": 5.9
+          },
+          "category": "landmark",
+          "position": null,
+          "answer": "Yes, the Sheraton Commander Grand Lake Hotel is on the map.",
+          "elapsed_sec": 38.8,
+          "guide_calls": [],
+          "usage_last_round": {
+            "completion_tokens": 14,
+            "prompt_tokens": 5716,
+            "total_tokens": 5730,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 5674
+            }
+          },
+          "rounds": [
+            {
+              "prompt_tokens": 5665,
+              "completion_tokens": 29,
+              "cached_tokens": 0
+            },
+            {
+              "prompt_tokens": 5716,
+              "completion_tokens": 14,
+              "cached_tokens": 5674
+            }
+          ],
+          "transcript": [
+            {
+              "role": "user",
+              "content": "###Relevant Points of Interest###\n\nThese are the points of interest most relevant to my next question, already ranked most relevant first. This ranking was computed for you; treat it as the resolution of whatever place my question refers to. The fields are the same as in the map data:\n\nindex: 33\nname: Sheraton Commander Grand Lake Hotel\ncoords: (1734.374679776977, 2309.1107065420197)\nedge: n19 - n20\nstreet: Mitchell Street\ncategories: [\n    building.accommodation,\n    accommodation.hotel,\n]\nopening hours: Open 24 hours, 7 days a week\nbrand: Sheraton\nfacilities: \n    internet access: free Wi-Fi\n    smoking: True\n    air conditioning: True\n\nindex: 47\nname: Waldorf Astoria\ncoords: (1842.5007082239085, 2458.2844087081344)\nedge: n19 - n26\nstreet: East Grixdale Avenue\ncategories: [\n    building.accommodation,\n    accommodation.hotel,\n]\nbrand: Waldorf Astoria\nfacilities: \n    internet access: True\n    smoking: False\n    toilets: True\n\nindex: 39\nname: Sunset Hotel\ncoords: (660.2608888184417, 1228.9836725215603)\nedge: n2 - n3\nstreet: Maine Street\ncategories: [\n    building.accommodation,\n    accommodation.hotel,\n]\nopening hours: Open 24 hours, 7 days a week\nfacilities: \n    internet access: free Wi-Fi\n    smoking: False\n    air conditioning: True\n\nindex: 42\nname: The Lincoln Detroit\ncoords: (2552.669648186611, 2497.1228969468134)\nedge: n37 - n38\nstreet: Klinger Street\ncategories: [\n    service.social facility.shelter,\n    building.accommodation,\n    building.facility,\n]\nfacilities: \n    smoking: False\n    air conditioning: True\n\nindex: 19\nname: Keynote Lounge\ncoords: (2191.8279806642186, 2679.8685236765996)\nedge: n31 - n57\nstreet: Conant Street\ncategories: [ catering.bar ]\n\nindex: 40\nname: The Australian Detroit\ncoords: (1350.002222634441, 1574.784318833575)\nedge: n10 - n16\nstreet: East Robinwood Street\ncategories: [ catering.restaurant.american ]\nopening hours: Su 11:30 AM - 7:00 PM; Tu-Sa 11:30 AM - 8:00 PM\nfacilities: \n    takeaway: True\n    delivery: True\ncatering: \n    cuisine: australian\n    reservation: required\n\nindex: 15\nname: Harrison & Co.\ncoords: (2598.0573075979455, 2052.5277569884415)\nedge: n38 - n39\nstreet: Klinger Street\ncategories: [ commercial.supermarket ]\nopening hours: Open 24 hours, 7 days a week\nfacilities: \n    smoking: False\n    air conditioning: True\ncommercial: \n    type: supermarket\n\nindex: 49\nname: Wolfgang\u2019s Steakhouse\ncoords: (1294.2625665601183, 2412.846505585001)\nedge: n9 - n10\nstreet: Brinker Avenue\ncategories: [ catering.restaurant.american ]\nopening hours: Mo-Su 12:00 PM - 9:30 PM\n\nThese are candidates for THIS question only, not the whole map; the complete list of points of interest is in the system prompt, and get_nearby_points_of_interest works on all of them.\n\n###Question###\n\nYou will be staying at the Sheraton Commander Grand Lake Hotel is this hotel on the map\n\n###Instructions###\n\nRemember that you MUST follow these instructions:\n- Answer without mentioning in your response the underlying graph, its nodes and edges and the cartesian plane; only use the provided information.\n- Give me a direct, detailed and precise answer and keep it as short as possible; be objective. Do not include not requested information.\n- Ensure that your answer is unbiased and does not rely on stereotypes.\n- Stick to the provided information: when information is insufficient to answer a question, respond by acknowledging the lack of an answer and suggest a way for me to find one.\n- If my question is ambiguous or unclear, ask for clarification. This does not apply to requests for directions, which are always resolved by the two rules below.\n- When giving directions ALWAYS call either guide_to_point_of_interest or guide_to_destination. Set the street-by-street parameter accordingly: true if I want street-by-street directions, false if I just want \"fly-me-there\" guidance to locate the point on the map.\n- If I request directions, decide the mode from the words I used and call the tool immediately. \"guide me\" means \"fly-me-there\" guidance: set the street-by-street parameter to false. \"navigate me\", \"directions\", and \"how can I get to\" mean street-by-street directions: set the street-by-street parameter to true. Do NOT ask me which mode I want when I have used any of these words. Only if I request directions using none of these words, and the context does not make the mode clear, ask whether I want street-by-street directions or just \"fly-me-there\" guidance to locate the point on the map.\n- Everytime I ask a question, you MUST call enable_points_of_interest to enable all the points of interest relevant to my question and the previous context, even if they are not explicitly mentioned in my question.\n"
+            },
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "name": "enable_points_of_interests",
+                  "arguments": "{\"disable_previous\":true,\"points_of_interest\":[33]}"
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "Points of interest are now enabled."
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, the Sheraton Commander Grand Lake Hotel is on the map."
+            }
+          ],
+          "grading_notes": "Yes; on Mitchell Street. Should confirm presence and ideally locate it.",
+          "grade": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,412 @@
+[OK] LLM server at http://localhost:11434/v1. Models: ['ggml-org/embeddinggemma-300M-GGUF:Q8_0', 'l1', 'l3', 'unsloth/gemma-4-e4b-it-qat-GGUF:Q4_K_XL']
+[new_york] building L1 index over 50 POIs...
+[new_york] curated system prompt ~2915 tokens (full MapIO dump would be ~11k; window is 8192)
+
+=== [NY-S1] Give me an overall description of the map.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [16, 9, 8, 48, 33, 25, 26, 13]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (141.7s): The map displays a bustling area in Midtown Manhattan, known as the Empire State Building neighborhood. It features a mix of commercial, residential, and cultural attractions. The area includes a variety of dining options, shopping, and entertainment.
+
+The road network consists of streets running east-west (West 27th Street to East 40th Street) and streets running north-south (7th Avenue to Park Avenue).
+
+Some notable features of the streets include:
+*   **Bike Lanes:** Present on 5th Avenue, 6th Avenue, 7th Avenue, Broadway, East 30th Street, East 31st Street, East 32nd Street, East 34th Street, East 36th Street, East 39th Street, Madison Avenue, West 28th Street, West 29th Street, West 30th Street, West 33rd Street, West 34th Street, West 35th Street, West 36th Street, West 37th Street.
+*   **Cobblestone Surfaces:** Found on 5th Avenue, 6th Avenue, 7th Avenue, East 31st Street, East 32nd Street, East 33rd Street, East 35th Street, East 37th Street, East 40th Street, Madison Avenue, Park Avenue, West 28th Street, West 29th Street, West 30th Street, West 32nd Street, West 33rd Street, West 34th Street, West 36th Street, and West 37th Street.
+*   **Roadwork:** Ongoing roadwork is noted on 5th Avenue, 6th Avenue, 7th Avenue, Broadway, East 32nd Street, East 33rd Street, East 34th Street, East 35th Street, East 36th Street, East 37th Street, East 38th Street, East 40th Street, Madison Avenue, Park Avenue, West 28th Street, West 29th Street, West 30th Street, West 31st Street, West 32nd Street, West 33rd Street, West 34th Street, West 35th Street, West 36th Street, West 38th Street, and West 39th Street.
+*   **Stairs:** Segments with stairs are located on 5th Avenue, 6th Avenue, 7th Avenue, Broadway, East 30th Street, East 31st Street, East 36th Street, East 37th Street, East 38th Street, East 39th Street, East 40th Street, Madison Avenue, Park Avenue, West 28th Street, West 29th Street, West 30th Street, West 31st Street, West 32nd Street, West 33rd Street, West 34th Street, West 35th Street, West 36th Street, West 37th Street, and West 39th Street.
+
+The map extends beyond its boundaries to the north (Midtown North - Bryant Park and the New York Public Library), south (Flatiron District - Flatiron Building and Madison Square Park), west (Hudson Yards - The Vessel and modern skyscrapers), and east (Midtown East - Chrysler Building and Grand Central Terminal).
+
+=== [NY-S2] What can I find on this map?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [16, 9, 25, 8, 48, 33, 46, 13]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (76.0s): The map contains several points of interest, including:
+
+*   **Restaurants and Food:** Dig (regional cuisine), Cafe R (international food court), Cafe China (Chinese cuisine), Windfall Lounge (restaurant), Wafels & Dinges (dessert), and Mad Dog & Beans Mexican Cantina (though not in the current list, it is on the map).
+*   **Fast Food:** Dig, McDonald's, and Tina's Cuban Cuisine (though not in the current list, it is on the map).
+*   **Cafés:** Blank Slate Coffee + Kitchen (though not in the current list, it is on the map), Starbucks, and Cafe R.
+*   **Financial Services:** Bank of America, Bank of Hope, Chase, Citizens Bank, and Valley Bank.
+*   **Education/Libraries:** Science, Industry and Business Library and Stavros Niarchos Foundation Library.
+*   **Offices/Diplomatic:** Consulate General of Poland.
+*   **Entertainment/Museum:** The Morgan Library & Museum.
+*   **Other:** Empire State Building (office), and Solle Spa (massage).
+
+If you are looking for something specific, please let me know!
+
+=== [NY-S3] How many streets are there?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': []}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (46.8s): I do not have a function to count the total number of streets in the neighborhood. However, the context provided lists the streets running east-west and north-south. There are 23 streets running east-west and 7 streets running north-south.
+
+=== [NY-S4] Tell me if there are stairs at some point on the road.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [36, 17, 15, 37, 9, 0, 10, 34]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (64.6s): Yes, there are streets with at least one segment that has stairs. These include 5th Avenue, 6th Avenue, 7th Avenue, Broadway, East 30th Street, East 31st Street, East 36th Street, East 37th Street, East 38th Street, East 39th Street, East 40th Street, Madison Avenue, Park Avenue, West 28th Street, West 29th Street, West 30th Street, West 31st Street, West 32nd Street, West 33rd Street, West 34th Street, West 35th Street, West 36th Street, West 37th Street, and West 39th Street.
+
+=== [NY-P1] Tell me the roads parallel to this one.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [0, 42, 34, 36, 10, 33, 45, 5]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (56.7s): The roads parallel to West 35th Street are East 34th Street, West 34th Street, East 36th Street, West 36th Street, East 37th Street, West 37th Street, East 38th Street, West 38th Street, East 39th Street, West 39th Street, and East 40th Street.
+
+=== [NY-R1] How can I come here from Solle Spa?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [35]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (48.1s): Do you want street-by-street directions or just "fly-me-there" guidance to get to Solle Spa from your current location?
+
+=== [NY-R2] How far is Solle Spa on foot?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [35]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 35, 'x': 2580.4127223098876, 'y': 1892.302663027251}
+Result:
+841.6579190191958
+Sending API request...
+Got API response
+--- answer (60.9s): Solle Spa is approximately 841.66 feet away.
+
+Would you like street-by-street directions or just "fly-me-there" guidance to Solle Spa?
+
+=== [NY-L1] Where is Shake Shack?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [34]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (45.1s): Where would you like to go? Do you want street-by-street directions or just "fly-me-there" guidance to locate Shake Shack?
+
+=== [NY-L2] Tell me about Cafe China.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [8]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (53.7s): Cafe China is a Chinese restaurant located on 6th Avenue. It is open from 11:30 AM to 10:30 PM on Sunday through Wednesday, and from 11:30 AM to 11:00 PM on Thursday through Saturday. It offers takeaway and has smoking facilities.
+
+Would you like me to give you street-by-street directions or just "fly-me-there" guidance to locate Cafe China?
+
+=== [NY-L3] What is the nearest intersection to the Empire State Building?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [17]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+Function call: get_point_of_interest_details
+Parameters: {'poi_index': 17}
+Result:
+name: Empire State Building
+index: 17
+coords: (2258.6443112416378, 2257.489831887794)
+edge: n29 - n36
+city: New York
+district: Manhattan Community Board 5
+street: 5th Avenue
+housenumber: 350
+categories: [
+    building.office,
+    building.historic,
+    heritage,
+    tourism.attraction,
+    office,
+    building.tourism,
+]
+opening hours: Mo-Su 8:00 AM - 2:00 AM
+contact: 
+    phone: +1-212-736-3100
+    website: https://www.esbnyc.com/explore
+building: 
+    levels: 102
+    type: office
+    use: office
+    color: beige
+    start date: 1931
+    architecture: art deco
+    height: 443.2
+accessibility: 
+    wheelchair accessible: True
+    tactile paving: True
+    tactile map: near the entrace, following the tactile paving
+    reception: True
+    stairs: False
+    elevator: True
+location description: on 5th Avenue, between the intersection with West 33rd Street and East 33rd Street and the intersection with West 34th Street and East 34th Street
+
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': False, 'points_of_interest': [17]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (62.9s): I do not have the capability to determine the nearest intersection to the Empire State Building based on the information provided. To find this, I would need a function that can calculate the closest intersection to a given coordinate.
+
+=== [NY-L4] Where is Starbucks located relative to the Empire State Building?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [36, 17]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (43.4s): Starbucks is located on the same street as the Empire State Building, 5th Avenue.
+
+=== [NY-L5] What's the nearest restaurant?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [1, 8, 9, 15, 16, 21, 26, 27]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 1, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1092.001852834726
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 8, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1519.1393545883002
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 9, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+822.1276209077107
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 15, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1597.538253159192
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 16, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1080.6543997834503
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 21, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1361.6584397229972
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 26, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1657.2432360124342
+Function call: get_distance_to_point_of_interest
+Parameters: {'poi_index': 27, 'x': 1418.1780490093365, 'y': 2181.8123830912873}
+Result:
+1300.0196739247149
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [1, 8, 9, 15, 16, 21, 26, 27]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (8557 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 8557, 'n_ctx': 8192}}
+--- answer (130.1s): None
+
+=== [NY-R3] How can I get to the nearest bank?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [3, 12, 45, 10, 4, 47]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (50.3s): I have found several banks near you. To give you the best directions, could you please tell me if you would like street-by-street directions or just "fly-me-there" guidance to the nearest bank?
+
+=== [NY-A1] Are there roadworks on this street?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [36, 34, 10, 25, 47, 42, 14, 4]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (48.2s): Yes, there is ongoing roadwork on the street segment where you are located.
+
+=== [NY-A2] Is there a walklight here?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': []}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (43.9s): Yes, there is a walk light at your current location.
+
+=== [NY-L6] Is there any restaurant open at 10 PM?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [1, 5, 21, 24, 27, 39, 42, 48]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [1, 5, 21, 24, 27, 39, 42, 48]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (71.6s): Yes, there are several restaurants open at 10:00 PM:
+
+*   **Andrews NYC Diner** is open until 10:00 PM on Mondays through Thursdays.
+*   **Mad Dog & Beans Mexican Cantina** is open until 10:00 PM on Sunday through Thursday.
+*   **Szechuan Gourmet** is open until 10:00 PM on Mondays through Fridays and Sundays.
+*   **The Italian Table** is open until 10:00 PM every day of the week.
+
+Other restaurants have different closing times or are not open at 10:00 PM.
+
+=== [NY-R4] Guide me to the Empire State Building.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [17, 36]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (47.0s): Do you want street-by-street directions or just "fly-me-there" guidance to locate the Empire State Building?
+
+=== [NY-R5] Navigate me to Bank of America.
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [3]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+Function call: guide_to_point_of_interest
+Parameters: {'poi_index': 3, 'street_by_street': True, 'x': 1275.5210854995216, 'y': 2097.8965222031607}
+Result:
+Navigation mode is now enabled.
+Sending API request...
+Got API response
+--- answer (59.1s): I have already provided you with street-by-street navigation to Bank of America. Is there anything else I can help you with regarding the neighborhood or other points of interest?
+
+=== [NY-N1] Is there a Walmart on this map?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': []}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (44.4s): I do not see a Walmart on the map. To check for other types of stores, you can ask me to find nearby points of interest.
+[detroit_conant] building L1 index over 51 POIs...
+[detroit_conant] curated system prompt ~2561 tokens (full MapIO dump would be ~11k; window is 8192)
+
+=== [DT-T2] I will be staying at the Sheraton Commander Grand Lake hotel. Is this hotel on the map?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [33]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (39.3s): Yes, the Sheraton Commander Grand Lake Hotel is on the map.
+
+=== [DT-T3] Is there free Wi-Fi at the hotel?
+Sending API request...
+Got API response
+Function call: enable_points_of_interests
+Parameters: {'disable_previous': True, 'points_of_interest': [39, 33, 47, 49, 19, 30, 21, 24]}
+Result:
+Points of interest are now enabled.
+Sending API request...
+Got API response
+--- answer (20.7s): Yes, the Sheraton Commander Grand Lake Hotel has free Wi-Fi.
+
+=== [DT-T4] Since the hotel has a long name, please remember it as 'my hotel'.
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (9141 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 9141, 'n_ctx': 8192}}
+--- answer (0.2s): None
+
+=== [DT-T5] I want to find a nice restaurant for a late evening dinner with friends. Is there an Italian restaurant?
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (10642 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 10642, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+=== [DT-T6] Is the restaurant open at 10 PM?
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (12115 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 12115, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+=== [DT-T7] How long would it take me to walk there from my hotel?
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (13546 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 13546, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+=== [DT-T8] I have decided to go by taxi instead. Help me point to the restaurant on the map.
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (15072 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 15072, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+=== [DT-T9] What entertainment options are near the restaurant?
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (16858 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 16858, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+=== [DT-T10] After dinner I want to go back to my hotel. Navigate me there.
+Sending API request...
+An error occurred: Error code: 400 - {'error': {'code': 400, 'message': 'request (18575 tokens) exceeds the available context size (8192 tokens), try increasing it', 'type': 'exceed_context_size_error', 'n_prompt_tokens': 18575, 'n_ctx': 8192}}
+--- answer (0.1s): None
+
+Saved /mnt/d/Projects/AccessMapBeyondTheCurb/explore/simple_camio_llm/benchmark/results/parity_20260804_150137.json
+Saved /mnt/d/Projects/AccessMapBeyondTheCurb/explore/simple_camio_llm/benchmark/results/parity_20260804_150137.md

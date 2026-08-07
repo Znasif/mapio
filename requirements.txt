@@ -1,7 +1,10 @@
 google-cloud-speech==2.7.0
 mediapipe==0.10.9
 numpy==1.24.4
-openai==1.40.2
+# Floor, not a pin: 1.40.2 passes proxies= to httpx.Client, which httpx removed
+# in 0.28, so the old pin cannot be installed fresh. 1.55.3 is the release that
+# dropped it.
+openai>=1.55.3
 opencv-contrib-python==4.6.0.66
 py3_tts==3.5
 pyttsx3==2.90
@@ -11,4 +14,6 @@ pygame==2.6.0
 pyyaml==6.0.1
 pyaudio==0.2.14
 python-dotenv==1.0.1
--e "git+https://github.com/Matteo-3033/speech_recognition.git#egg=speechrecognition"
+# PEP 508 rather than `-e git+...`: uv only accepts editables that point at a
+# local directory. To hack on the fork, clone it and use -e ./src/speechrecognition
+speechrecognition @ git+https://github.com/Matteo-3033/speech_recognition.git

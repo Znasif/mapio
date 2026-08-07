@@ -56,6 +56,9 @@ class Config:
         self.temperature: float = 0.0
         "Temperature of the LLM module. Defaults to 0.0."
 
+        self.prompt_file: str = ""
+        "Path to the prompt yaml. Empty means res/prompt_<lang>.yaml."
+
     @property
     def inches_per_feet(self) -> float:
         """
@@ -79,6 +82,7 @@ class Config:
         self.stt_enabled = not args.no_stt
         self.lang = args.lang.value
         self.tts_rate = args.tts_rate
+        self.prompt_file = args.prompt or ""
 
     def load_model(self, model: Dict[str, Any]) -> None:
         """

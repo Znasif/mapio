@@ -16,7 +16,7 @@ from src.command_controller import CommandController
 from src.config import config, get_args
 from src.frame_processing import GestureRecognizer, GestureResult, Hand, MapDetector
 from src.graph import Graph, RouteAction, WayPoint
-from src.llm import LLM
+from src.llm import LLM, CuratedPromptFormatter, PlaceRetrieval, PromptFormatter
 from src.modules_repository import ModulesRepository
 from src.navigation import NavigationAction, NavigationController
 from src.position import PositionHandler
@@ -34,21 +34,67 @@ repository = ModulesRepository()
 """ Repository for accessing all the modules in the application. """
 
 
+def build_prompt_formatter(
+    prompt_file: str, graph: Graph, map_id: str
+) -> Optional[PromptFormatter]:
+    """Curated context when serving locally, MapIO's full-graph dump otherwise.
+
+    The full dump is ~29K tokens for new_york, which the 8192-token window an
+    8 GB M1 serves rejects with a 400 before allocating anything. Every local
+    number in benchmark/results/ was measured with CuratedPromptFormatter and
+    its L1 retrieval step, so the app has to use the same pair or it is not
+    running what was tested.
+
+    Returning None leaves LLM's own default in place -- the unmodified
+    full-graph formatter against OpenAI -- so nothing changes when
+    LLM_BASE_URL is unset.
+    """
+
+    base_url = os.environ.get("LLM_BASE_URL")
+    if not base_url:
+        return None
+
+    retrieval = PlaceRetrieval(base_url, model=os.environ.get("LLM_EMBED_MODEL", "l1"))
+
+    # map_id keys the embedding cache, and the benchmark keyed it by the model's
+    # directory name. Matching it means a map already benchmarked starts from
+    # the cache instead of re-embedding every POI through l1.
+    print(f"Indexing {len(graph.pois)} points of interest for '{map_id}'...")
+    try:
+        retrieval.build(map_id, graph.pois)
+    except Exception as e:
+        # Exit rather than fall back to the full graph: that path 400s on every
+        # single question, which looks like a broken app instead of a missing
+        # server. The cache makes this a first-run-per-map requirement only.
+        raise SystemExit(
+            f"\nCould not reach the embedding server at {base_url}: {e}\n"
+            f"The place index has to be built once per map before MapIO can "
+            f"run locally.\nStart the local stack, or unset LLM_BASE_URL to "
+            f"use OpenAI."
+        )
+
+    k = int(os.environ.get("LLM_CANDIDATES_K", "8"))
+    return CuratedPromptFormatter(prompt_file, graph, retrieval, k=k)
+
+
 class MapIOController:
     """
     Main controller for the MapIO application.
     """
 
-    def __init__(self, model: Dict[str, Any]) -> None:
+    def __init__(self, model: Dict[str, Any], map_id: str) -> None:
         self.description = model["context"].get("description", None)
 
         # Model
         self.graph = Graph(model["graph"], self.__on_route)
         self.position_handler = PositionHandler()
+
+        prompt_file = config.prompt_file or f"res/prompt_{config.lang}.yaml"
         self.llm = LLM(
-            f"res/prompt_{config.lang}.yaml",
+            prompt_file,
             model["context"],
             temperature=config.temperature,
+            formatter=build_prompt_formatter(prompt_file, self.graph, map_id),
         )
 
         self.model_detector = MapDetector()
@@ -323,10 +369,14 @@ if __name__ == "__main__":
     config.load_model(model)
     print(f"\nLoaded map: {model.get('name', 'Unknown')}\n")
 
+    # The directory name, not the file name: models/new_york/new_york.json ->
+    # "new_york", which is the id the benchmark cached its embeddings under.
+    map_id = os.path.basename(os.path.dirname(os.path.abspath(args.model)))
+
     mapio: Optional[MapIOController] = None
     try:
         # Start the main controller and run the application
-        mapio = MapIOController(model)
+        mapio = MapIOController(model, map_id)
         mapio.main_loop()
 
     except KeyboardInterrupt:
