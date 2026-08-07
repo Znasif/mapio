@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Dict, Iterable, List, Optional
 
 from openai import OpenAI, OpenAIError
@@ -24,6 +25,7 @@ from .prompt_formatter import PromptFormatter
 class LLM(Module):
     MODEL = "gpt-4o-2024-08-06"
     MAX_TOKENS = 2000
+    LOCAL_MAX_TOKENS = 768
     DEFAULT_TEMPERATURE = 0.0
 
     QUESTION_MARKER = "###Question###"
@@ -35,6 +37,7 @@ class LLM(Module):
         context: Dict[str, str],
         temperature: float = DEFAULT_TEMPERATURE,
         formatter: Optional[PromptFormatter] = None,
+        max_tokens: Optional[int] = None,
     ) -> None:
         super().__init__()
 
@@ -51,6 +54,16 @@ class LLM(Module):
         else:
             self.client = OpenAI()
         self.model = os.environ.get("LLM_MODEL") or LLM.MODEL
+
+        # 2000 was sized for a 128K window. Locally the whole request has to fit
+        # in 8192 alongside a ~6.5K prompt, so reserving 2000 for output is
+        # arithmetic the window cannot satisfy -- the server's own cap is what
+        # holds today, silently. 768 is 1.4x the longest completion observed
+        # across every curated run (551 tokens on NY-S2; p99 518, mean 59).
+        default_max = LLM.LOCAL_MAX_TOKENS if base_url else LLM.MAX_TOKENS
+        self.max_tokens = max_tokens or int(
+            os.environ.get("LLM_MAX_TOKENS", default_max)
+        )
 
         # Gemma emits chain-of-thought by default, and with `tools` present the
         # CoT eats the whole token budget before any call is emitted;
@@ -76,8 +89,19 @@ class LLM(Module):
         self.prompt_formatter = formatter or PromptFormatter(prompt_file, self.__graph)
 
         self.context = context
-        self.history: List[ChatCompletionMessageParam] = list()
-        self.history.append(self.prompt_formatter.get_main_prompt(self.context))
+
+        # get_main_prompt() stamps datetime.now() into the MIDDLE of the system
+        # message, so rebuilding it makes each new prompt differ from the last
+        # mid-prefix -- and Gemma 4's shared KV cannot prefix-reuse around a
+        # mid-prompt difference (ggml-org/llama.cpp#21468). Measured on the
+        # benchmark: 38.8s -> 14.3s on the first turn, 15.5s -> 6.2s on the
+        # second, purely from building this message once and keeping it.
+        # Frozen only when serving locally; against OpenAI reset() rebuilds it
+        # exactly as before.
+        self.freeze_system_prompt = bool(base_url)
+        self.system_message = self.prompt_formatter.get_main_prompt(self.context)
+
+        self.history: List[ChatCompletionMessageParam] = [self.system_message]
         self.usage: List[Optional[CompletionUsage]] = list()
 
         self.running = False
@@ -95,7 +119,41 @@ class LLM(Module):
     def reset(self) -> None:
         self.running = False
         self.history.clear()
-        self.history.append(self.prompt_formatter.get_main_prompt(self.context))
+        if not self.freeze_system_prompt:
+            self.system_message = self.prompt_formatter.get_main_prompt(self.context)
+        self.history.append(self.system_message)
+
+    def warm_up(self) -> Optional[float]:
+        """Prime the server's cache with the system prefix. Returns seconds.
+
+        Without this the first question pays the whole prefill -- 38.8s against
+        14.3s warm, on the same turn. `tools` is load-bearing: llama.cpp renders
+        the tool definitions into the prompt, so a warm-up that omits them
+        shares no prefix with a real turn and caches nothing (measured: 4205
+        tokens primed, cached=0 on the turn that followed).
+
+        Safe from a background thread -- it appends nothing to history -- and
+        safe to skip, since failing only costs latency on the first question.
+        """
+
+        start = time.time()
+        try:
+            self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    self.system_message,
+                    {"role": "user", "content": "###Question###\n\nready\n"},
+                ],
+                max_tokens=1,
+                temperature=self.temperature,
+                tools=self.prompt_formatter.get_tool_calls(),
+                extra_body=self.extra_body,
+            )
+        except OpenAIError as e:
+            print(f"Prefix warm-up failed; the first question will be slower: {e}")
+            return None
+
+        return round(time.time() - start, 2)
 
     def __compact_history(self) -> None:
         """Cut PAST turns down to their question core.
@@ -139,7 +197,7 @@ class LLM(Module):
 
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    max_tokens=LLM.MAX_TOKENS,
+                    max_tokens=self.max_tokens,
                     temperature=self.temperature,
                     messages=self.history,
                     tools=self.prompt_formatter.get_tool_calls(),

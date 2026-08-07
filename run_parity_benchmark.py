@@ -290,9 +290,10 @@ def main():
                         help="prime the system-prompt prefix before the first turn, "
                              "so per-turn timings are warm")
     parser.add_argument("--max-tokens", type=int, default=None,
-                        help="cap generation (default: LLM.MAX_TOKENS = 2000). At "
-                             "29k context l3 generates ~2.1 tok/s, so 2000 is a "
-                             "~15-minute worst case per answer; use ~512 for --formatter full")
+                        help="cap generation. Default is LLM's own: 768 locally, "
+                             "1.4x the longest completion ever measured (551 on "
+                             "NY-S2). At 29k context l3 generates ~2.1 tok/s, so "
+                             "--formatter full wants this lower still")
     parser.add_argument("--label", default=None,
                         help="write results to <out-dir>/<label>/ instead of <out-dir>/")
     args = parser.parse_args()
@@ -382,15 +383,13 @@ def main():
         if isinstance(map_data.get("context"), dict):
             context.update({k: str(v) for k, v in map_data["context"].items()})
 
-        # get_main_prompt() stamps datetime.now() into the context line, and
-        # llm.reset() calls it once per case. Left alone, every case gets a
-        # system prompt that differs from the last *mid-prompt* -- which Gemma 4
-        # cannot reuse around, so each case re-evaluates the whole thing (~76s
-        # at 11k). Freeze one system message for the run instead.
-        frozen_system = formatter.get_main_prompt(context)
-        formatter.get_main_prompt = lambda _context, _m=frozen_system: _m
-
-        sys_tokens = approx_tokens(str(frozen_system["content"]))
+        # The system message used to be frozen here, by monkeypatching the
+        # formatter, so that llm.reset() could not restamp datetime.now() into
+        # the middle of it between cases. LLM does that itself now whenever it
+        # is serving locally (LLM.freeze_system_prompt), which is the same
+        # behaviour and is also what mapio.py gets. Rendered here only to size
+        # it for the notes below.
+        sys_tokens = approx_tokens(str(formatter.get_main_prompt(context)["content"]))
         print(f"[{map_name}] {args.formatter} system prompt ~{sys_tokens} tokens")
         if args.formatter == "full" and sys_tokens > 7000:
             print("[NOTE] this needs --ctx-size 16384 on the l3 instance; at 8192 "
@@ -407,37 +406,25 @@ def main():
                     print(f"  {turn.get('id', case['id'])}: user turn ~{approx_tokens(str(msg['content']))} tokens")
             continue
 
-        llm = LLM(args.prompt, context, formatter=formatter)
+        llm = LLM(args.prompt, context, formatter=formatter,
+                  max_tokens=args.max_tokens)
+        print(f"[{map_name}] max_tokens {llm.max_tokens}, "
+              f"system prompt {'frozen' if llm.freeze_system_prompt else 'per-session'}")
 
-        # Warm-up has to happen AFTER llm.reset(), not before: reset() rebuilds
-        # the system prompt and get_main_prompt() stamps datetime.now() into it,
-        # so a prompt warmed beforehand differs from the one actually sent --
-        # and the difference is *inside* the system message, which Gemma 4
-        # cannot reuse around (ggml-org/llama.cpp#21468). Measured: warming the
-        # pre-reset message primes 4205 tokens and still yields cached=0.
         warmup_pending = args.warmup
 
         def warm_prefix():
             print(f"[{map_name}] warming the prefix...", flush=True)
-            # tools= matters: llama.cpp renders the tool definitions into the
-            # prompt, so a warm-up without them shares no prefix with a real
-            # turn and caches nothing.
-            t0 = time.time()
-            warm = llm.client.chat.completions.create(
-                model=args.model,
-                messages=[llm.history[0],
-                          {"role": "user", "content": "###Question###\n\nready\n"}],
-                max_tokens=1,
-                temperature=0,
-                tools=llm.prompt_formatter.get_tool_calls(),
-                extra_body=llm.extra_body,
-            )
-            print(f"[{map_name}] prefix warm in {round(time.time() - t0, 2)}s "
-                  f"({warm.usage.prompt_tokens} prompt tokens primed)")
-            return round(time.time() - t0, 2)
+            elapsed = llm.warm_up()
+            print(f"[{map_name}] prefix warm in {elapsed}s")
+            return elapsed
 
         for case in map_cases:
             llm.reset()
+            # Warm AFTER reset(), never before. reset() rebuilds history from
+            # the system message, and a prefix warmed against a message the
+            # session then discards shares nothing with the turns that follow
+            # (measured: 4205 tokens primed, cached=0 on the next turn).
             if warmup_pending:
                 warmup_sec = warm_prefix()
                 warmup_pending = False

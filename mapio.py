@@ -139,6 +139,12 @@ class MapIOController:
 
         self.keyboard.init_shortcuts()
 
+        # The welcome, the instructions and the map description take several
+        # seconds to speak. Spend them priming the model's prefix, so the first
+        # question does not pay the prefill on top of its own answer.
+        if config.llm_enabled:
+            th.Thread(target=self.__warm_up_llm, daemon=True).start()
+
         self.tts.welcome()
         self.tts.instructions()
         if self.description is not None:
@@ -205,6 +211,11 @@ class MapIOController:
         self.tts.goodbye()
         time.sleep(2)
         self.tts.stop()
+
+    def __warm_up_llm(self) -> None:
+        elapsed = self.llm.warm_up()
+        if elapsed is not None:
+            print(f"Model prefix warm in {elapsed}s")
 
     def is_handling_user_input(self) -> bool:
         return self.command_controller.is_handling_command()
