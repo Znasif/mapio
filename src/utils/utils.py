@@ -51,7 +51,39 @@ def load_map_parameters(filename: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         return None
 
-    return dict(map_params)
+    map_params = dict(map_params)
+
+    template = map_params.get("template_image")
+    if template:
+        map_params["template_image"] = resolve_template(template, filename)
+
+    return map_params
+
+
+def resolve_template(template: str, map_file: str) -> str:
+    """Locate a map's template image.
+
+    The path stored in the JSON is repo-relative ("models/new_york/template.png"),
+    which only resolves when cwd happens to be the repo root. Once maps live in
+    a user data directory that is never true, so fall back to looking beside the
+    JSON itself -- where every existing model keeps its template anyway.
+
+    The value is returned unchanged when nothing better is found: cv2.imread
+    reports a missing template the same way either way, and rewriting it to a
+    path that also does not exist would only make the error harder to read.
+    """
+    if os.path.isabs(template) or os.path.exists(template):
+        return template
+
+    map_dir = os.path.dirname(os.path.abspath(map_file))
+    for candidate in (
+        os.path.join(map_dir, template),
+        os.path.join(map_dir, os.path.basename(template)),
+    ):
+        if os.path.exists(candidate):
+            return candidate
+
+    return template
 
 
 class StrEnum(str, Enum):

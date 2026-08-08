@@ -19,6 +19,9 @@ output
 # Chat output
 out
 
+# Embedding cache ($MAPIO_HOME/cache; the repo is MAPIO_HOME when it is unset)
+cache
+
 # misc
 *.spec
 .DS_STORE

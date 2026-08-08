@@ -4,11 +4,17 @@ from .config import Lang
 
 mapio_parser = argparse.ArgumentParser(description="MapIO, with LLM integration")
 
-mapio_parser.add_argument("--model", help="Path to model json file.", required=True)
+mapio_parser.add_argument(
+    "--model",
+    help="Map to load: a path to a model json file, or the name of a map under "
+    "$MAPIO_HOME/models (--model new_york). MAPIO_HOME defaults to the "
+    "application directory, so a repo checkout behaves as before.",
+    required=True,
+)
 mapio_parser.add_argument(
     "--out",
-    help="Path to chat save file.",
-    default="out/last_chat.txt",
+    help="Path to chat save file. Defaults to $MAPIO_HOME/out/last_chat.txt.",
+    default=None,
 )
 
 mapio_parser.add_argument(

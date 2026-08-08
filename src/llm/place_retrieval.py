@@ -18,7 +18,9 @@ import hashlib
 import json
 import os
 import urllib.request
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from src.config import paths
 
 DOC_PREFIX = "title: {name} | text: {text}"
 QUERY_PREFIX = "task: search result | query: {query}"
@@ -86,12 +88,15 @@ class PlaceRetrieval:
         self,
         base_url: str,
         model: str = "l1",
-        cache_dir: str = os.path.join(os.path.dirname(__file__), "..", "..", "benchmark", ".cache"),
+        cache_dir: Optional[str] = None,
         timeout: int = 120,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.cache_dir = cache_dir
+        # None rather than a computed default, so $MAPIO_HOME is read at
+        # construction time instead of at import time -- the benchmark sets it
+        # after this module is already loaded.
+        self.cache_dir = cache_dir or paths.cache_dir()
         self.timeout = timeout
 
         self._docs: List[str] = []
@@ -123,10 +128,15 @@ class PlaceRetrieval:
         ).hexdigest()[:12]
         cache_path = os.path.join(self.cache_dir, f"emb_{map_id}_{key}.json")
 
-        if os.path.exists(cache_path):
-            with open(cache_path, "r", encoding="utf-8") as f:
-                self._vectors = json.load(f)
-            return
+        # benchmark/.cache is where the index lived before the data-directory
+        # split. Read from it when the current location has no entry, so maps
+        # already indexed there are not re-embedded through l1; writes always
+        # go to the current location.
+        for path in (cache_path, os.path.join(paths.LEGACY_CACHE_DIR, os.path.basename(cache_path))):
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self._vectors = json.load(f)
+                return
 
         self._vectors = self._embed(self._docs)
         os.makedirs(self.cache_dir, exist_ok=True)

@@ -2,7 +2,15 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from src.config.paths import env_file
+
+# $MAPIO_HOME/.env, which is the repo's own .env until MAPIO_HOME says otherwise.
+# The bare load_dotenv() fallback keeps the upstream behaviour -- search cwd and
+# upwards -- for a checkout run from a subdirectory.
+if os.path.isfile(env_file()):
+    load_dotenv(env_file())
+else:
+    load_dotenv()
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 
@@ -13,7 +21,7 @@ import traceback
 from typing import Any, Callable, Dict, List, Optional
 
 from src.command_controller import CommandController
-from src.config import config, get_args
+from src.config import config, get_args, paths
 from src.frame_processing import GestureRecognizer, GestureResult, Hand, MapDetector
 from src.graph import Graph, RouteAction, WayPoint
 from src.llm import LLM, CuratedPromptFormatter, PlaceRetrieval, PromptFormatter
@@ -89,7 +97,7 @@ class MapIOController:
         self.graph = Graph(model["graph"], self.__on_route)
         self.position_handler = PositionHandler()
 
-        prompt_file = config.prompt_file or f"res/prompt_{config.lang}.yaml"
+        prompt_file = config.prompt_file or paths.resource(f"prompt_{config.lang}.yaml")
         self.llm = LLM(
             prompt_file,
             model["context"],
@@ -103,9 +111,11 @@ class MapIOController:
 
         # View
         self.view = ViewManager(self.graph.pois)
-        self.tts = MapIOTTS(f"res/strings_{config.lang}.json", rate=config.tts_rate)
+        self.tts = MapIOTTS(
+            paths.resource(f"strings_{config.lang}.json"), rate=config.tts_rate
+        )
         self.stt = STT()
-        self.audio_manager = AudioManager("res/sounds.json")
+        self.audio_manager = AudioManager(paths.resource("sounds.json"))
 
         # User interaction
         self.navigation_controller = NavigationController(
@@ -113,9 +123,11 @@ class MapIOController:
         )
         self.__action_listeners = self.__get_action_listeners()
         self.command_controller = CommandController(
-            repository, "res/voice_commands.json", self.__on_user_action
+            repository, paths.resource("voice_commands.json"), self.__on_user_action
         )
-        self.keyboard = KeyboardManager("res/shortcuts.json", self.__on_user_action)
+        self.keyboard = KeyboardManager(
+            paths.resource("shortcuts.json"), self.__on_user_action
+        )
 
         self.running = False
 
@@ -372,14 +384,23 @@ if __name__ == "__main__":
     args = get_args()
     config.load_args(args)
 
-    out_dir = os.path.dirname(args.out)
-    if not os.path.exists(out_dir):
-        print(f"\nDirectory {out_dir} does not exist.")
+    # Created rather than demanded: out/ is gitignored, so a fresh checkout has
+    # never had it, and a data directory starts empty by definition.
+    out_file = args.out or paths.data("out", "last_chat.txt")
+    out_dir = os.path.dirname(os.path.abspath(out_file))
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError as e:
+        print(f"\nCannot create chat directory {out_dir}: {e}")
         sys.exit(0)
 
-    model = load_map_parameters(args.model)
+    map_file = paths.resolve_map(args.model)
+    model = load_map_parameters(map_file) if map_file else None
     if model is None:
         print(f"\nModel file {args.model} not found.")
+        available = paths.available_maps()
+        if available:
+            print(f"Maps in {paths.models_dir()}: {', '.join(available)}")
         sys.exit(0)
 
     config.load_model(model)
@@ -387,7 +408,7 @@ if __name__ == "__main__":
 
     # The directory name, not the file name: models/new_york/new_york.json ->
     # "new_york", which is the id the benchmark cached its embeddings under.
-    map_id = os.path.basename(os.path.dirname(os.path.abspath(args.model)))
+    map_id = os.path.basename(os.path.dirname(os.path.abspath(map_file)))
 
     mapio: Optional[MapIOController] = None
     try:
@@ -407,5 +428,5 @@ if __name__ == "__main__":
     if mapio is not None:
         # Save the chat log to a file
         mapio.stop()
-        mapio.save_chat(args.out)
-        print(f"\nChat saved to {args.out}")
+        mapio.save_chat(out_file)
+        print(f"\nChat saved to {out_file}")

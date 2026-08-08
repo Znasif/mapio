@@ -2,6 +2,8 @@ import argparse
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from . import paths
+
 
 class Lang(Enum):
     """
@@ -88,7 +90,9 @@ class Config:
         self.stt_enabled = not args.no_stt
         self.lang = args.lang.value
         self.tts_rate = args.tts_rate
-        self.prompt_file = args.prompt or ""
+        # Resolved against the app directory when it is not found as given, so
+        # --prompt res/prompt_en_fixed.yaml works from any working directory.
+        self.prompt_file = paths.resolve_resource(args.prompt) if args.prompt else ""
         self.camera = args.camera
         self.microphone = args.microphone
 
