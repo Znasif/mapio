@@ -7,7 +7,18 @@ numpy==1.24.4
 openai>=1.55.3
 opencv-contrib-python==4.6.0.66
 py3_tts==3.5
-pyttsx3==2.90
+# Windows-only, because both distributions install a package named `pyttsx3`
+# and whichever lands second wins. On macOS pyttsx3 2.90's nsss driver decorates
+# with @objc.python_method without importing objc, so winning that race breaks
+# TTS outright -- py3_tts forked precisely to fix it. On Windows the sapi5
+# driver has no such bug and the resolved pair is what has been running, so the
+# marker keeps that side byte-identical.
+pyttsx3==2.90 ; platform_system == "Windows"
+# py3_tts hard-pins pyobjc==9.0.1 on Darwin, whose objc/_bridgesupport.py
+# imports pkg_resources -- which setuptools dropped in 81, and which a uv venv
+# does not provide at all. pygame 2.6.0 imports it too. Not needed on Windows,
+# where nothing on this list reaches for pkg_resources.
+setuptools<81 ; platform_system == "Darwin"
 SpeechRecognition==3.10.4
 pynput==1.7.7
 pygame==2.6.0
