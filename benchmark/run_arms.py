@@ -75,6 +75,11 @@ def main() -> None:
                              "recorded turns, so it isolates what STT costs")
     parser.add_argument("--label-suffix", default=None,
                         help="override the folder suffix for a comparator run")
+    parser.add_argument("--routing", choices=["stub", "local", "google"],
+                        default="stub",
+                        help="stub keeps guide calls as no-ops, which is how "
+                             "every graded run so far worked; local actually "
+                             "routes and records the waypoints")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the commands without running them")
     args = parser.parse_args()
@@ -97,7 +102,9 @@ def main() -> None:
     # baseline it is being compared against.
     suffix = args.label_suffix
     if suffix is None:
-        suffix = ("_text" if args.no_audio else "") + ("_nohints" if args.no_stt_hints else "")
+        suffix = (("_text" if args.no_audio else "")
+                  + ("_nohints" if args.no_stt_hints else "")
+                  + ("" if args.routing == "stub" else f"_{args.routing}routing"))
 
     for arm in selected:
         spec = ARMS[arm]
@@ -114,6 +121,8 @@ def main() -> None:
             cmd += ["--audio-dir", AUDIO_DIR, "--audio-only"]
         if args.no_stt_hints:
             cmd += ["--no-stt-hints"]
+        if args.routing != "stub":
+            cmd += ["--routing", args.routing]
         if args.case:
             cmd += ["--case", args.case]
         if args.map:

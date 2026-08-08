@@ -10,11 +10,21 @@ from src.position import PositionInfo
 pygame.mixer.init()
 
 
+# The background loop is the only user of pygame.mixer.music, so this mutes it
+# alone -- the pointing chirp and the POI sounds are Sound objects on their own
+# channels. BACKGROUND_VOLUME=0 silences it; 0.2 keeps it as quiet feedback.
+BACKGROUND_VOLUME = float(os.getenv("BACKGROUND_VOLUME", "1.0"))
+
+
 class AudioLooper:
     def __init__(self, filepath: str) -> None:
         pygame.mixer.music.load(filepath)
 
     def play(self) -> None:
+        # Set on every play(): hand_feedback() stops and restarts the loop on
+        # each gesture change, and pygame resets nothing, but this keeps the
+        # volume in one place rather than depending on init order.
+        pygame.mixer.music.set_volume(BACKGROUND_VOLUME)
         pygame.mixer.music.play(-1)
 
     def pause(self) -> None:

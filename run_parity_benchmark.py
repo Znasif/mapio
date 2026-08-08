@@ -9,9 +9,13 @@ window an 8 GB M1 serves, so CuratedPromptFormatter supplies a skeleton plus
 per-question L1-retrieved candidates (design doc §8: the ceiling is the reason
 the L1->L3 architecture exists).
 
-Google Routes is stubbed: guide_to_* only ever surfaces "Navigation mode is now
-enabled." to the LLM, so a no-op stub preserves LLM-visible behavior while
-keeping the run local-only.
+Guidance is stubbed by default: guide_to_* only ever surfaces "Navigation mode
+is now enabled." to the LLM, so a no-op stub preserves LLM-visible behavior.
+That means every graded run so far shows the model asking for the right route
+and says nothing about whether a usable route came back. --routing local runs
+the real router and records the waypoints navigation would have received:
+
+  ./run_parity_benchmark.py --audio-dir benchmark/audio --audio-only --routing local
 
 Usage:
   ./run_parity_benchmark.py                          # auto-resolves the server
@@ -134,23 +138,70 @@ def resolve_position(graph, spec):
     raise ValueError(f"Unknown position spec: {spec}")
 
 
-def stub_guides(graph, recorded):
-    """Replace Google-Routes-backed guidance with local no-op recorders."""
+def stub_guides(graph, recorded, execute=False):
+    """Record every guidance call; optionally let it actually route.
+
+    execute=False is how every run before 2026-08 worked: the call was recorded
+    and discarded, so the graded results say the model asked for the right
+    route and say nothing at all about whether a route came back. execute=True
+    calls through, and the waypoints arrive via the Graph's route callback --
+    see route_recorder().
+    """
+
+    real_poi = graph.guide_to_poi
+    real_destination = graph.guide_to_destination
+
+    # guide_to_poi resolves the POI and calls guide_to_destination on itself
+    # (graph.py), which is the wrapper below once both are replaced. Under
+    # execute=True that would record every POI guide twice and inflate
+    # guide_calls against the stubbed runs, so the inner hop is passed through
+    # untouched.
+    inner = {"active": False}
 
     def guide_to_poi(start, poi_index, street_by_street=True, route_index=0):
         recorded.append(
             {"call": "guide_to_poi", "poi_index": poi_index,
              "street_by_street": street_by_street}
         )
+        if not execute:
+            return
+        inner["active"] = True
+        try:
+            real_poi(start, poi_index, street_by_street, route_index)
+        finally:
+            inner["active"] = False
 
     def guide_to_destination(start, destination, street_by_street=True, route_index=0):
+        if inner["active"]:
+            return real_destination(start, destination, street_by_street, route_index)
+
         recorded.append(
             {"call": "guide_to_destination", "destination": str(destination),
              "street_by_street": street_by_street}
         )
+        if execute:
+            real_destination(start, destination, street_by_street, route_index)
 
     graph.guide_to_poi = guide_to_poi
     graph.guide_to_destination = guide_to_destination
+
+
+def route_recorder(routes):
+    """Graph route callback that captures what navigation would have received."""
+
+    def on_route(action, start, street_by_street, waypoints):
+        entry = {"action": action.name, "street_by_street": street_by_street}
+        if waypoints is not None:
+            entry["waypoints"] = [
+                {"instructions": w.instructions,
+                 "direction": str(w.direction),
+                 "name": w.name,
+                 "coords": [round(w.coords.x, 1), round(w.coords.y, 1)]}
+                for w in waypoints
+            ]
+        routes.append(entry)
+
+    return on_route
 
 
 def extract_transcript(history, start_index):
@@ -289,6 +340,12 @@ def main():
     parser.add_argument("--warmup", action="store_true",
                         help="prime the system-prompt prefix before the first turn, "
                              "so per-turn timings are warm")
+    parser.add_argument("--routing", choices=["stub", "local", "google"],
+                        default="stub",
+                        help="stub: record guide calls and discard them, as every "
+                             "run before this flag existed did. local/google: "
+                             "actually route, and record the waypoints navigation "
+                             "would have received.")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="cap generation. Default is LLM's own: 768 locally, "
                              "1.4x the longest completion ever measured (551 on "
@@ -339,7 +396,11 @@ def main():
     if not cases:
         sys.exit("[ERROR] No cases match the filter.")
 
+    # graph.py reads ROUTING at import time, so it has to be set first.
+    if args.routing != "stub":
+        os.environ["ROUTING"] = args.routing
     from src.graph import Graph
+    import src.graph.graph as graph_routing
     from src.llm.llm import LLM
     from src.llm.curated_formatter import CuratedPromptFormatter
     from src.llm.place_retrieval import PlaceRetrieval
@@ -356,9 +417,13 @@ def main():
         with open(model_path, encoding="utf-8") as f:
             map_data = json.load(f)
 
-        graph = Graph(map_data["graph"], lambda *a, **k: None)
+        routes = []
+        graph = Graph(map_data["graph"], route_recorder(routes))
         guide_calls = []
-        stub_guides(graph, guide_calls)
+        stub_guides(graph, guide_calls, execute=args.routing != "stub")
+        if args.routing != "stub":
+            print(f"[{map_name}] routing is LIVE ({graph_routing.ROUTING}); "
+                  f"waypoints will be recorded per turn")
 
         # Contextual hints for the recogniser: the map's own POI names, which is
         # what mapio biases on. Only SFSpeechRecognizer acts on them.
@@ -470,6 +535,7 @@ def main():
 
                 pos = resolve_position(graph, turn.get("position"))
                 guide_calls.clear()
+                routes.clear()
                 history_start = len(llm.history)
 
                 if spoken and spoken["sent_as"] == "input_audio":
@@ -513,6 +579,7 @@ def main():
                     "answer": answer,
                     "elapsed_sec": round(elapsed, 2),
                     "guide_calls": list(guide_calls),
+                    "routes": list(routes),
                     "usage_last_round": usage,
                     "rounds": [
                         {
@@ -546,6 +613,7 @@ def main():
             "model": args.model,
             "k": args.k,
             "formatter": args.formatter,
+            "routing": args.routing,
             "input": args.input,
             "prompt": os.path.basename(args.prompt),
             "benchmark": os.path.basename(args.benchmark),
