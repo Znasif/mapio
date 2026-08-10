@@ -62,19 +62,58 @@ run()  { if [ "$DRY" = 1 ]; then printf '    [dry] %s\n' "$*"; else "$@"; fi; }
 say "preflight"
 
 [ "$(uname -s)" = "Darwin" ] || { echo "install: macOS only" >&2; exit 1; }
-[ "$(uname -m)" = "arm64" ] || {
-  echo "install: Apple Silicon only -- the vendored pyaudio wheel and the" >&2
-  echo "         llama build are both arm64." >&2; exit 1; }
+# uname -m reports the architecture of THIS PROCESS, not of the machine. A
+# terminal set to "Open using Rosetta" -- which MapIO's own README once
+# recommended, to get an Intel Python for PyAudio -- reports x86_64 on an M-series
+# Mac, and the old message here then blamed the hardware for a shell setting.
+if [ "$(uname -m)" != "arm64" ]; then
+  translated="$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)"
+  is_arm="$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)"
+
+  if [ "$is_arm" = "1" ]; then
+    echo "install: this shell is x86_64 on Apple Silicon hardware" \
+         "($(sysctl -n machdep.cpu.brand_string 2>/dev/null))." >&2
+    [ "$translated" = "1" ] && echo "         It is being translated by Rosetta." >&2
+    echo "         Start a native shell and re-run:" >&2
+    echo "           arch -arm64 /bin/zsh" >&2
+    echo "           ./packaging/install.sh" >&2
+    echo "         To make it permanent, uncheck 'Open using Rosetta' in the" >&2
+    echo "         terminal application's Get Info panel." >&2
+  else
+    echo "install: Apple Silicon only -- the vendored pyaudio wheel, the llama" >&2
+    echo "         build and the Metal serving path are all arm64." >&2
+  fi
+  exit 1
+fi
 
 macos_major="$(sw_vers -productVersion | cut -d. -f1)"
 [ "$macos_major" -ge 12 ] || {
   echo "install: macOS 12 or later required (found $(sw_vers -productVersion))" >&2
   exit 1; }
 
-command -v uv >/dev/null 2>&1 || {
-  echo "install: uv not found. It provisions the pinned Python 3.11, so the" >&2
-  echo "         install does not depend on a system Python:" >&2
-  echo "           curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 1; }
+# uv provisions the pinned Python 3.11, so the install never depends on a
+# system Python. Installed into the prefix rather than ~/.local/bin when it is
+# missing: it is this application's build tool, not something the user asked to
+# have on their PATH, and deleting the prefix should take it with it.
+UV="$(command -v uv 2>/dev/null || true)"
+if [ -z "$UV" ]; then
+  if [ "$DRY" = 1 ]; then
+    echo "    [dry] would install uv into $PREFIX/runtime/bin"
+    UV=uv
+  else
+    say "installing uv (not found on PATH)"
+    mkdir -p "$PREFIX/runtime/bin"
+    curl -LsSf --retry 3 https://astral.sh/uv/install.sh \
+      | env UV_INSTALL_DIR="$PREFIX/runtime/bin" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 || {
+        echo "install: could not install uv automatically. Install it and re-run:" >&2
+        echo "           curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+        exit 1; }
+    UV="$PREFIX/runtime/bin/uv"
+    [ -x "$UV" ] || { echo "install: uv did not land at $UV" >&2; exit 1; }
+  fi
+fi
+# build-wheels.sh calls `uv` by name, so put ours first for the whole run.
+export PATH="$(dirname "$UV"):$PATH"
 
 # The wheels packaging/build-wheels.sh produces. Without them pip falls back to
 # building pyaudio from source against a portaudio the user is not expected to
@@ -220,7 +259,7 @@ say "creating the locked environment"
 # the project has to be the tree that carries packaging/vendor -- this repo
 # when developing, the unpacked tarball when installing from a release.
 run env UV_PROJECT_ENVIRONMENT="$PREFIX/runtime/venv" \
-    uv sync --frozen --project "$REPO" --no-dev
+    "$UV" sync --frozen --project "$REPO" --no-dev
 PYTHON="$PREFIX/runtime/venv/bin/python"
 
 # The two locally built wheels, installed after the lock rather than through it.
@@ -231,7 +270,7 @@ PYTHON="$PREFIX/runtime/venv/bin/python"
 # build-wheels.sh produces.
 say "installing vendored wheels"
 run env VIRTUAL_ENV="$PREFIX/runtime/venv" \
-    uv pip install --quiet "$REPO/packaging/vendor"/*.whl
+    "$UV" pip install --quiet "$REPO/packaging/vendor"/*.whl
 
 # ---------------------------------------------------------------------------
 # Data directory. Created if absent, never overwritten.
