@@ -234,6 +234,10 @@ class MapIOController:
 
     def stop(self) -> None:
         self.running = False
+        # The audio source is held open for the whole session now, so releasing
+        # it is this method's job -- otherwise the microphone-in-use indicator
+        # outlives the app.
+        self.stt.release_microphone()
 
     def save_chat(self, filename: str) -> None:
         self.llm.save_chat(filename)

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Run MapIO against the local stack, starting it if it is not up.
+# Generated from packaging/templates/bin/mapio.in.
+#
+#   mapio --model new_york --prompt res/prompt_en_fixed.yaml --debug
+#   mapio --model new_york                       # camera/mic chosen interactively
+#
+# Quit with 'q'. Ctrl-C interrupts while the process is usually blocked inside
+# PortAudio or OpenCV, so cleanup does not finish and the process can survive
+# holding the camera and microphone -- after which the next run cannot open
+# them and both fail with errors that name neither cause.
+
+set -euo pipefail
+
+export MAPIO_HOME="@HOME_DIR@"
+
+LABEL="@LABEL@"
+AGENTS="$HOME/Library/LaunchAgents"
+LLM="http://127.0.0.1:@LLM_PORT@/v1/models"
+STT="http://127.0.0.1:@STT_PORT@/health"
+
+up() { curl -sf --max-time 2 "$1" >/dev/null 2>&1; }
+
+# launchd keeps these alive, so one being absent means it was booted out or
+# never bootstrapped. Start it here rather than letting the user discover it
+# from a connection error three seconds into their first question.
+for unit in llm stt; do
+  if ! launchctl print "gui/$(id -u)/$LABEL.$unit" >/dev/null 2>&1; then
+    echo "starting $LABEL.$unit"
+    launchctl bootstrap "gui/$(id -u)" "$AGENTS/$LABEL.$unit.plist" 2>/dev/null || true
+  fi
+done
+
+for endpoint in "$LLM" "$STT"; do
+  for _ in $(seq 1 30); do
+    up "$endpoint" && break
+    sleep 1
+  done
+  up "$endpoint" || {
+    echo "mapio: $endpoint is not responding." >&2
+    echo "       Logs: ~/Library/Logs/mapio-llm.log, ~/Library/Logs/mapio-stt.log" >&2
+    exit 1
+  }
+done
+
+exec "@PYTHON@" "@APP@/mapio.py" "$@"

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  MapIO on-device transcription server. Generated from
+  packaging/templates/launchd/stt.plist.in; installed to
+  ~/Library/LaunchAgents/@LABEL@.stt.plist.
+
+  =====================================================================
+  THIS IS A LaunchAGENT. It CANNOT be a LaunchDaemon. Do not "fix" it.
+  =====================================================================
+
+  Three hard requirements, all pointing the same way:
+
+  1. legacyspeechcli is launched through LaunchServices (`open -n`), because TCC
+     attributes a request to the *responsible process* and a bare binary dies
+     with __TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__ rather than a catchable
+     error. `open` needs a GUI session; the system domain has none.
+
+  2. The Speech Recognition grant is per-user and is established by answering a
+     system dialog. A daemon in the system domain cannot raise one, and there is
+     nobody to answer it before login.
+
+  3. On-device recognition needs the dictation language model, which lives in
+     the user's context (System Settings -> Keyboard -> Dictation).
+
+  The user answers the Speech Recognition dialog ONCE, on the first
+  transcription. Until it is answered, requests block.
+
+  Managed by install.sh; these are for reference:
+      launchctl print gui/$(id -u)/@LABEL@.stt
+      launchctl kickstart -k gui/$(id -u)/@LABEL@.stt
+      launchctl bootout gui/$(id -u)/@LABEL@.stt
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>@LABEL@.stt</string>
+
+    <!-- No UserName/GroupName: an agent already runs as the logged-in user
+         inside their GUI session, and that session membership is the entire
+         reason this unit exists. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>@APP@/bin/mapio-stt</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/@USER@</string>
+        <key>MAPIO_HOME</key>
+        <string>@HOME_DIR@</string>
+        <key>PATH</key>
+        <string>@APP@/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- Recognition is short and interactive; keep it off the throttled
+         tier. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/@USER@/Library/Logs/mapio-stt.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/@USER@/Library/Logs/mapio-stt.log</string>
+</dict>
+</plist>

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# MapIO on-device transcription server. Companion to mapio-llm.
+# Generated from packaging/templates/bin/mapio-stt.in.
+#
+#   mapio-stt                      serve on 127.0.0.1:@STT_PORT@
+#   MAPIO_STT_BIN=... mapio-stt    use a different transcriber
+#
+# Started by the @LABEL@.stt LaunchAgent, which MUST be an agent and not a
+# daemon -- see the plist for why.
+
+set -euo pipefail
+
+PYTHON="${MAPIO_PYTHON:-@PYTHON@}"
+SERVER="${MAPIO_STT_SERVER_PY:-@APP@/tools/macos_stt/stt_server.py}"
+HOST="${MAPIO_STT_HOST:-127.0.0.1}"
+PORT="${MAPIO_STT_PORT:-@STT_PORT@}"
+
+# legacyspeechcli, not speechcli. SFSpeechRecognizer's `contextualStrings`
+# actually biases recognition; SpeechAnalyzer's equivalent hook is present but
+# measurably inert, and on POI names that is the whole ballgame:
+#   reference             "Gammeeok ... Solle Spa ... Stavros Niarchos"
+#   speechcli (+/- hints) "Gamioc ... solely spawn ... Nyarkas"
+#   legacyspeechcli+hints "Gammeeok ... Solle Spa ... Stavros Niarchos"  exact
+# The cost of that accuracy is the TCC grant, which is what forces the agent.
+BIN="${MAPIO_STT_BIN:-@APP@/tools/macos_stt/legacyspeechcli.app}"
+
+[ -f "$SERVER" ] || { echo "mapio-stt: no stt_server.py at $SERVER" >&2; exit 1; }
+[ -e "$BIN" ]    || { echo "mapio-stt: no transcriber at $BIN" >&2; exit 1; }
+
+# An .app whose signature does not bind Info.plist is ignored by TCC, and the
+# failure surfaces as a recognition error rather than a packaging one. Catch it
+# here instead of at the user's first utterance.
+#
+# Capture first, then match: `codesign ... | grep -q` looks natural but is wrong
+# under `set -o pipefail` -- grep -q exits at the first match, codesign takes
+# SIGPIPE, and the pipeline reports failure even though the check passed.
+if [[ "$BIN" == *.app ]]; then
+  sig="$(codesign -dv --verbose=2 "$BIN" 2>&1 || true)"
+  case "$sig" in
+    *"Info.plist entries="*) ;;
+    *) echo "mapio-stt: $BIN has no bound Info.plist -- the bundle is not" \
+            "correctly signed and TCC will refuse it. Reinstall MapIO." >&2
+       exit 1 ;;
+  esac
+fi
+
+exec "$PYTHON" "$SERVER" --bin "$BIN" --host "$HOST" --port "$PORT"

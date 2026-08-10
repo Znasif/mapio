@@ -742,7 +742,13 @@ def get_direction(versor: Coords) -> CardinalDirection:
 def get_turning_direction(
     new_versor: Coords, old_direction: CardinalDirection, old_versor: Coords
 ) -> CardinalDirection:
-    dot = new_versor.dot(old_versor)
+    # Clamped because acos is defined on [-1, 1] and the dot product of two
+    # unit vectors lands outside it through rounding alone -- 1.0000000000000002
+    # is enough to raise "math domain error", which surfaced as a failed
+    # guide_to_point_of_interest with no indication of the cause. Two versors
+    # pointing the same way is the common case here (a route continuing
+    # straight through a node), so this is on the hot path, not an edge case.
+    dot = max(-1.0, min(1.0, new_versor.dot(old_versor)))
     angle = math.degrees(math.acos(dot))  # between 0 and 180
 
     direction_index = 0

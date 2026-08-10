@@ -4,9 +4,10 @@ import os
 import subprocess
 import tempfile
 import threading as th
+from contextlib import ExitStack
 import urllib.error
 import urllib.request
-from typing import Optional, Set
+from typing import Any, Optional, Set
 
 import speech_recognition as sr
 
@@ -148,6 +149,49 @@ def resolve_microphone(requested: Optional[str]) -> Optional[int]:
     return None
 
 
+def select_microphone() -> Optional[int]:
+    """The microphone to record from, asking when there is a choice.
+
+    Mirrors select_camera_port(). Without this, omitting --microphone silently
+    opened the system default and merely printed the alternatives afterwards --
+    so the common failure was a recording of the wrong device, surfacing much
+    later as "No question recognized", which reads as a speaking problem rather
+    than a routing one. The camera has always been chosen this way; the
+    microphone matters just as much and was not.
+    """
+
+    if config.microphone is not None:
+        return resolve_microphone(config.microphone)
+
+    devices = distinct_devices(input_devices())
+
+    if len(devices) == 0:
+        print("\nNo microphone found. Connect one and restart.")
+        return None
+
+    if len(devices) == 1:
+        index, name = devices[0]
+        print(f"\nMicrophone: {index} ({name}) -- the only input device.")
+        return index
+
+    print("\nAvailable microphones:")
+    for index, name in devices:
+        print(f"  {index}: {name}")
+
+    valid = {str(index) for index, _ in devices}
+    while True:
+        answer = input(f"Enter the microphone number [{', '.join(sorted(valid))}]: ").strip()
+        if answer in valid:
+            break
+        print(f"Invalid selection. Enter one of: {', '.join(sorted(valid))}.")
+
+    chosen = int(answer)
+    name = next((n for i, n in devices if i == chosen), "")
+    hint = f'--microphone "{name}"' if name else f"--microphone {chosen}"
+    print(f"Skip this next time with: {hint}")
+    return chosen
+
+
 class STT(Module):
     TIMEOUT = 20
     PHRASE_TIME_LIMIT = 30
@@ -161,15 +205,17 @@ class STT(Module):
         self.recognizer = sr.Recognizer()
         self.recognizer.pause_threshold = STT.FINAL_SILENCE_DURATION
 
-        device = resolve_microphone(config.microphone)
+        device = select_microphone()
         self.microphone = sr.Microphone(device_index=device)
         self.commands: Set[str] = set()
 
-        # Say which device is actually open. "No speech detected" from the
-        # recogniser looks like a speaking problem, not a routing one.
-        if device is None:
-            print("Microphone: system default. Choose another with --microphone:")
-            print_devices(input_devices())
+        # device is None only when nothing was found, in which case
+        # sr.Microphone falls back to the system default and will most likely
+        # fail at record time; select_microphone() has already said so.
+
+        # The session's audio source, opened lazily and held until shutdown.
+        self.__microphone_stack = ExitStack()
+        self.__source: Optional[Any] = None
 
         self.__recording_audio = False
         self.__processing_audio = False
@@ -180,9 +226,79 @@ class STT(Module):
     def is_processing_audio(self) -> bool:
         return self.__processing_audio
 
+    def __open_microphone(self) -> Optional[Any]:
+        """The open audio source, opening it on first use.
+
+        Opened once and held for the session rather than re-entered per
+        recording. sr.Microphone.__enter__/__exit__ runs a full PyAudio
+        init -> open -> close -> terminate cycle each time, and on macOS the
+        device does not reliably survive that churn: the first question records,
+        the second fails with
+
+            ||PaMacCore (AUHAL)|| Error on line 2744: Unspecified Audio
+            Hardware Error
+
+        and every question after it. Reproduced on both the packaged and the
+        original stacks, so it is the reopen that is at fault, not the
+        surrounding setup.
+
+        The cost is that the microphone-in-use indicator stays lit for the
+        session. For a tool someone stands at and speaks to, that is honest.
+        """
+        if self.__source is not None:
+            return self.__source
+
+        problem: Optional[str] = None
+        try:
+            self.__source = self.__microphone_stack.enter_context(self.microphone)
+        except Exception as e:
+            problem = str(e)
+        else:
+            # __enter__ does not always raise when the open fails: PortAudio
+            # prints its own error and sr.Microphone returns with .stream still
+            # None. Checking the exception alone let that through, and the
+            # failure resurfaced two frames later as an assertion inside
+            # adjust_for_ambient_noise, followed by AttributeError on
+            # NoneType.close() during teardown -- two tracebacks for one
+            # unplugged microphone.
+            if getattr(self.__source, "stream", None) is None:
+                problem = "the device did not open (no audio stream)"
+
+        if problem is not None:
+            self.release_microphone()
+            print(
+                f"\nCould not open the microphone: {problem}\n"
+                "  - it may have been unplugged, or dropped off the USB bus\n"
+                "  - another application may hold it: video calls and browser\n"
+                "    tabs take microphones exclusively\n"
+                "Reconnect it or close the other application, then restart."
+            )
+            return None
+
+        return self.__source
+
+    def release_microphone(self) -> None:
+        """Close the session's audio source. Safe to call more than once.
+
+        Never raises. This runs from MapIOController.stop(), on the way out of
+        a session that may already be failing, and sr.Microphone.__exit__ calls
+        self.stream.close() unconditionally -- which is an AttributeError when
+        the stream was never opened. A shutdown path that throws turns one
+        problem into two tracebacks and buries the first.
+        """
+        try:
+            self.__microphone_stack.close()
+        except Exception:
+            pass
+        finally:
+            self.__microphone_stack = ExitStack()
+            self.__source = None
+
     def calibrate(self) -> None:
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source)
+        source = self.__open_microphone()
+        if source is None:
+            return
+        self.recognizer.adjust_for_ambient_noise(source)
 
     def add_command(self, command: str) -> None:
         self.commands.add(command)
@@ -197,13 +313,21 @@ class STT(Module):
         self.__recording_audio = True
 
         try:
-            with self.microphone as source:
-                audio = self.recognizer.listen(
-                    source,
-                    timeout=STT.TIMEOUT,
-                    phrase_time_limit=STT.PHRASE_TIME_LIMIT,
-                )
-        except Exception:
+            source = self.__open_microphone()
+            if source is None:
+                return None
+
+            audio = self.recognizer.listen(
+                source,
+                timeout=STT.TIMEOUT,
+                phrase_time_limit=STT.PHRASE_TIME_LIMIT,
+            )
+        except Exception as e:
+            # Drop the source so the next attempt reopens it: a stream that has
+            # errored does not recover, and silently reusing it turns one bad
+            # recording into every recording after it failing too.
+            print(f"Recording failed: {e}")
+            self.release_microphone()
             return None
         finally:
             self.__recording_audio = False

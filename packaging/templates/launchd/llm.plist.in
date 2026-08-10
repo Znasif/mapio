@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  MapIO local LLM router. Generated from
+  packaging/templates/launchd/llm.plist.in; installed to
+  ~/Library/LaunchAgents/@LABEL@.llm.plist.
+
+  A LaunchAgent, not a LaunchDaemon, unlike the development machine's unit.
+  The daemon's advantage is starting before login, and that does not survive
+  contact with FileVault: /Users is encrypted until someone authenticates, so a
+  daemon needing $HOME for its presets and model cache fails at boot and
+  KeepAlive-retries until login regardless. What an agent buys in exchange is an
+  install with no sudo, which is worth considerably more in a package.
+
+  Managed by install.sh; these are for reference:
+      launchctl print gui/$(id -u)/@LABEL@.llm
+      launchctl kickstart -k gui/$(id -u)/@LABEL@.llm
+      launchctl bootout gui/$(id -u)/@LABEL@.llm
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>@LABEL@.llm</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@APP@/bin/mapio-llm</string>
+    </array>
+
+    <!-- launchd hands a job a minimal environment. Everything the script
+         resolves relatively has to be stated. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/@USER@</string>
+        <key>MAPIO_HOME</key>
+        <string>@HOME_DIR@</string>
+        <key>PATH</key>
+        <string>@APP@/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>@HOME_DIR@</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Safe because --sleep-idle-seconds does not exit the process: the child
+         enters a sleeping state and the router keeps running. If that ever
+         changes, KeepAlive here becomes a restart loop. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- Serves interactive requests; keep it off the throttled background
+         tier. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>LowPriorityIO</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/@USER@/Library/Logs/mapio-llm.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/@USER@/Library/Logs/mapio-llm.log</string>
+</dict>
+</plist>

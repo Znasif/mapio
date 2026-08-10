@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# MapIO local LLM router. Generated from packaging/templates/bin/mapio-llm.in.
+#
+#   mapio-llm            serve on 127.0.0.1:@LLM_PORT@
+#   mapio-llm --port N   serve elsewhere
+#   any other arguments are passed through to `llama serve`
+#
+# Normally started by the @LABEL@.llm LaunchAgent rather than by hand.
+#
+# Binds to loopback. To reach it from another machine use an SSH tunnel rather
+# than exposing the port -- the server has no auth and sets CORS to '*'.
+
+set -euo pipefail
+
+LLAMA="${MAPIO_LLAMA_BIN:-@APP@/runtime/bin/llama}"
+PRESETS="${MAPIO_LLM_PRESETS:-@HOME_DIR@/models.ini}"
+HOST="${MAPIO_LLM_HOST:-127.0.0.1}"
+PORT="${MAPIO_LLM_PORT:-@LLM_PORT@}"
+MODELS_MAX="${MAPIO_MODELS_MAX:-@MODELS_MAX@}"
+
+[ -x "$LLAMA" ]  || { echo "mapio-llm: no llama binary at $LLAMA" >&2; exit 1; }
+[ -f "$PRESETS" ] || { echo "mapio-llm: no preset file at $PRESETS" >&2; exit 1; }
+
+# The KV slot directory has to exist before a tier loads. llama.cpp rejects
+# --slot-save-path pointing at a missing directory with a usage error about the
+# argument, which reads as a malformed command line rather than a missing
+# directory, and the tier just "fails to load".
+mkdir -p "@HOME_DIR@/cache/kv"
+
+# --models-max is sized by the installer from installed RAM. It is not a
+# preference: two large tiers resident at once overflow the Metal working set
+# on an 8 GB machine, and the failure is not graceful --
+# kIOGPUCommandBufferCallbackErrorOutOfMemory leaves the backend in an error
+# state that only a restart clears.
+#
+# --sleep-idle-seconds does NOT exit the process: the child enters a sleeping
+# state and the router keeps serving. That is what makes KeepAlive safe in the
+# LaunchAgent.
+exec "$LLAMA" serve \
+  --models-preset "$PRESETS" \
+  --models-max "$MODELS_MAX" \
+  --models-autoload \
+  --sleep-idle-seconds 600 \
+  --host "$HOST" \
+  --port "$PORT" \
+  "$@"

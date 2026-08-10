@@ -596,6 +596,10 @@ def main():
                     "guide_calls": list(guide_calls),
                     "routes": list(routes),
                     "usage_last_round": usage,
+                    # llm.timings is appended in step with llm.usage, so the two
+                    # slices line up round for round. prompt_ms vs predicted_ms
+                    # is the split token counts cannot show: 609 tokens over
+                    # 217 s is not a slow decoder, it is a prefill bill.
                     "rounds": [
                         {
                             "prompt_tokens": u.prompt_tokens,
@@ -603,8 +607,11 @@ def main():
                             "cached_tokens": getattr(
                                 getattr(u, "prompt_tokens_details", None),
                                 "cached_tokens", None),
+                            "timings": t,
                         }
-                        for u in llm.usage[usage_start:] if u is not None
+                        for u, t in zip(llm.usage[usage_start:],
+                                        llm.timings[usage_start:])
+                        if u is not None
                     ],
                     "transcript": extract_transcript(llm.history, history_start),
                     "grading_notes": turn.get("grading_notes", ""),

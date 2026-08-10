@@ -26,6 +26,9 @@ class LLM(Module):
     MODEL = "gpt-4o-2024-08-06"
     MAX_TOKENS = 2000
     LOCAL_MAX_TOKENS = 768
+    # Headroom for what the message list does not count: llama.cpp renders the
+    # tool definitions into the prompt itself, and they are not free.
+    CTX_MARGIN_TOKENS = 1024
     DEFAULT_TEMPERATURE = 0.0
 
     QUESTION_MARKER = "###Question###"
@@ -82,9 +85,34 @@ class LLM(Module):
         self.reinject_instructions = (
             os.environ.get("LLM_REINJECT_INSTRUCTIONS", "0" if base_url else "1") == "1"
         )
-        self.compact_history_enabled = (
-            os.environ.get("LLM_COMPACT_HISTORY", "1" if base_url else "0") == "1"
-        )
+        # "1" compacts every turn, "0" never, "auto" only when the next request
+        # would not otherwise fit.
+        #
+        # Compacting every turn rewrites the middle of the request, so llama.cpp
+        # can only reuse the frozen system prompt: measured cache_n pinned at
+        # 3688 from turn 3 on, while prompt_n grew 1461 -> 3295. Never
+        # compacting restores reuse (cache_n climbed to 13958) but the prompt
+        # grows too, so prefill only fell 102s -> 88s across 7 turns -- and
+        # decode doubled, 62s -> 127s, because the model answers at much greater
+        # length when it can see every past turn's scaffolding. Net 1.31x
+        # slower, and turn 9 exceeded a 16384 window outright.
+        #
+        # "auto" keeps the prefix while it is free and pays for it only at the
+        # window edge. Not the default: the measured win is small and the
+        # verbosity effect above is a quality change that wants grading first.
+        mode = os.environ.get("LLM_COMPACT_HISTORY", "1" if base_url else "0").lower()
+        self.compact_history_mode = mode if mode in ("0", "1", "auto") else "1"
+        self.compact_history_enabled = self.compact_history_mode != "0"
+
+        # The window "auto" is fitting into. The client cannot ask the server
+        # for it, so it is stated here and must match the tier's ctx-size.
+        self.ctx_size = int(os.environ.get("LLM_CTX_SIZE", 8192))
+
+        # Characters per token, re-derived from every response: the server
+        # reports exactly how many tokens the messages we just sent became, so
+        # the ratio calibrates itself to this prompt and this tokeniser instead
+        # of relying on a chars/4 rule of thumb.
+        self._chars_per_token: float = 4.0
 
         self.prompt_formatter = formatter or PromptFormatter(prompt_file, self.__graph)
 
@@ -103,6 +131,15 @@ class LLM(Module):
 
         self.history: List[ChatCompletionMessageParam] = [self.system_message]
         self.usage: List[Optional[CompletionUsage]] = list()
+
+        # llama.cpp returns a `timings` object alongside `usage`, splitting each
+        # round into prompt_ms (prefill) and predicted_ms (decode), with cache_n
+        # for how much of the prompt the prefix cache served. Token counts alone
+        # cannot tell those apart, and which one dominates decides whether the
+        # lever is prompt shape or decode speed. Appended in step with usage, so
+        # index i of one matches index i of the other. Always None against
+        # OpenAI, which sends no such field.
+        self.timings: List[Optional[Dict[str, object]]] = list()
 
         self.running = False
 
@@ -182,10 +219,42 @@ class LLM(Module):
             compacted.append(msg)
         self.history[:] = compacted
 
+    @staticmethod
+    def __message_chars(messages: List[ChatCompletionMessageParam]) -> int:
+        """Rough size of a message list, tool-call arguments included."""
+        total = 0
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, str):
+                total += len(content)
+            for call in (msg.get("tool_calls") or []):
+                function = call.get("function") or {}
+                total += len(str(function.get("name", "")))
+                total += len(str(function.get("arguments", "")))
+        return total
+
+    def __would_overflow(self, new_message: ChatCompletionMessageParam) -> bool:
+        """Would sending history + new_message leave no room to answer?
+
+        The reservation is max_tokens for the completion plus a margin for the
+        tool definitions, which are rendered into the prompt by llama.cpp and
+        so never appear in the message list this counts.
+        """
+        chars = LLM.__message_chars(self.history) + LLM.__message_chars([new_message])
+        estimated = chars / max(self._chars_per_token, 1.0)
+        return estimated + self.max_tokens + LLM.CTX_MARGIN_TOKENS > self.ctx_size
+
     def ask(self, question: str, position: Optional[PositionInfo]) -> Optional[str]:
-        if self.compact_history_enabled:
-            self.__compact_history()
         new_message = self.prompt_formatter.get_user_message(question, position)
+
+        if self.compact_history_mode == "1":
+            self.__compact_history()
+        elif self.compact_history_mode == "auto" and self.__would_overflow(new_message):
+            # Late rather than never: everything up to this turn stays byte
+            # identical for as long as it fits, so llama.cpp keeps reusing it.
+            print("Compacting history to fit the context window.")
+            self.__compact_history()
+
         self.history.append(new_message)
         self.running = True
 
@@ -204,6 +273,17 @@ class LLM(Module):
                     extra_body=self.extra_body,
                 )
                 self.usage.append(response.usage)
+                extra = getattr(response, "model_extra", None) or {}
+                self.timings.append(extra.get("timings"))
+
+                # Recalibrate the estimator against what the server actually
+                # tokenised. Only when the count is plausible: a failed or empty
+                # round would otherwise poison the ratio and make "auto" compact
+                # far too early or far too late.
+                if response.usage is not None and response.usage.prompt_tokens > 0:
+                    sent = LLM.__message_chars(self.history)
+                    if sent > 0:
+                        self._chars_per_token = sent / response.usage.prompt_tokens
 
                 if not self.running:
                     break

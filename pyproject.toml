@@ -36,9 +36,7 @@ dependencies = [
     "pynput==1.7.7",
     "pygame==2.6.0",
     "pyyaml==6.0.1",
-    "pyaudio==0.2.14",
     "python-dotenv==1.0.1",
-    "speechrecognition==3.10.4",
     # py3_tts pins pyobjc==9.0.1 on Darwin, whose objc/_bridgesupport.py imports
     # pkg_resources -- dropped in setuptools 81 and absent from a uv venv
     # entirely. pygame 2.6.0 imports it too.
@@ -55,6 +53,13 @@ dependencies = [
 # there is no build backend and nothing to build.
 package = false
 
-[tool.uv.sources]
-pyaudio = { path = "packaging/vendor/pyaudio-0.2.14-cp311-cp311-macosx_11_0_arm64.whl" }
-speechrecognition = { path = "packaging/vendor/speechrecognition-3.10.4-py2.py3-none-any.whl" }
+# pyaudio and speechrecognition are deliberately NOT declared here.
+#
+# They are built locally by packaging/build-wheels.sh, and a locally built wheel
+# is not byte-reproducible -- zip timestamps alone change the hash. Locking them
+# pins a hash that only the machine that generated the lock can satisfy, so
+# `uv sync --frozen` fails with "Hash mismatch" on every fresh clone, which is
+# precisely the install path this package exists to support.
+#
+# install.sh installs both wheels into the environment after syncing this file.
+# Their versions are pinned by the filenames build-wheels.sh produces.

@@ -36,3 +36,7 @@ Include
 pyvenv.cfg
 # Vendored wheels are build artifacts of packaging/build-wheels.sh
 packaging/vendor
+
+# Built by packaging/build-speechcli.sh (signed per release)
+tools/macos_stt/legacyspeechcli.app
+tools/macos_stt/speechcli
