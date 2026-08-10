@@ -44,7 +44,18 @@ if BACKEND == "google":
     # cloud library that is never called -- and it pulls in pkg_resources,
     # which setuptools no longer installs into a fresh venv by default, so a
     # local-only install died at import on a dependency it does not use.
-    from google.cloud import speech  # noqa: F401  (imported for its side effect)
+    try:
+        from google.cloud import speech  # noqa: F401  (imported for its side effect)
+    except ImportError:
+        # The packaged macOS build omits google-cloud-speech entirely, but
+        # STT_BACKEND still defaults to "google" so upstream behaviour is
+        # unchanged for anyone who has it. Reaching here means the two
+        # disagree, and the bare ModuleNotFoundError names neither remedy.
+        raise SystemExit(
+            "\nSTT_BACKEND is 'google' but google-cloud-speech is not installed.\n"
+            "Set STT_BACKEND=apple to use the on-device recogniser, or install "
+            "the cloud client with: pip install google-cloud-speech\n"
+        )
 
 
 def input_devices() -> list:

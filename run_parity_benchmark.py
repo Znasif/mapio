@@ -549,11 +549,25 @@ def main():
                     print(f"\n=== [{turn_id}] {utterance}")
 
                 usage_start = len(llm.usage)
+                malformed = None
                 t0 = time.time()
-                if wav_b64 is None:
-                    answer = llm.ask(utterance, pos)
-                else:
-                    answer = ask_with_audio(llm, formatter, pos, wav_b64)
+                try:
+                    if wav_b64 is None:
+                        answer = llm.ask(utterance, pos)
+                    else:
+                        answer = ask_with_audio(llm, formatter, pos, wav_b64)
+                except json.JSONDecodeError as e:
+                    # The model emitted tool arguments that are not valid JSON.
+                    # prompt_formatter parses them outside its own error handling,
+                    # and that is left alone deliberately: l3 has never tripped it
+                    # across every graded run, so a crash there is a signal about
+                    # the model, not a gap to paper over. Caught here instead so
+                    # the remaining turns still run and the rate is measurable --
+                    # a model that does this once in nine turns is disqualified
+                    # regardless of how fast it is.
+                    answer = None
+                    malformed = {"error": str(e), "arguments": e.doc}
+                    print(f"[MALFORMED TOOL CALL] {e}\n    {e.doc!r}")
                 elapsed = time.time() - t0
 
                 if answer is None:
@@ -577,6 +591,7 @@ def main():
                     "category": turn.get("category", case.get("category")),
                     "position": turn.get("position"),
                     "answer": answer,
+                    "malformed_tool_call": malformed,
                     "elapsed_sec": round(elapsed, 2),
                     "guide_calls": list(guide_calls),
                     "routes": list(routes),

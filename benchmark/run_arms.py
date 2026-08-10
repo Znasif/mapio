@@ -53,6 +53,33 @@ ARMS = {
         "why": "whole graph in context + raw audio, no STT (ctx 16384)",
         "flags": ["--formatter", "full", "--input", "audio"],
     },
+    # One model instead of two. LFM2.5-2.6B is small enough (2.87 GB at Q8_0,
+    # against l3's ~4.7 GiB) and long enough in context (128K, against 8192)
+    # that it can hold the whole graph itself -- which is what l1 exists to
+    # avoid. So --formatter full drops the retrieval step entirely and this arm
+    # answers one question: does the pair earn its complexity?
+    #
+    # Point --server at the l4-only router, not :8081:
+    #   ABTC_LLM_PRESETS=~/.config/abtc/models-l4.ini ABTC_LLM_PORT=8082 \
+    #       start-ai --no-quiet
+    #   python benchmark/run_arms.py --arms 4 --server http://127.0.0.1:8082/v1
+    "4": {
+        "label": "arm4_lfm_single",
+        "why": "LFM2.5-2.6B alone: whole graph in context, no l1, no l3",
+        "flags": ["--formatter", "full", "--input", "text", "--model", "l4"],
+    },
+    # arm5 - arm1 is what the model is worth; arm5 - arm4 is what the context
+    # strategy is worth. arm4's first run answered in 26-102s against l3's 74s
+    # on the same case, with prefix caching already working -- so on this
+    # machine a 2.6B model reading 18.7K tokens is not obviously cheaper than a
+    # 5B model reading a curated 8K. Swapping only the model, and leaving the
+    # l1 retrieval step in place, separates those two claims.
+    "5": {
+        "label": "arm5_lfm_curated",
+        "why": "LFM2.5-2.6B with L1 curation: today's pipeline, new chat model",
+        "flags": ["--formatter", "curated", "--input", "text",
+                  "--model", "l4", "--embed-model", "l1"],
+    },
 }
 
 
@@ -61,10 +88,19 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--arms", default="1,2,3",
                         help="comma-separated subset, e.g. 2,3")
-    parser.add_argument("--server", default="http://localhost:11434/v1")
+    # 11434 is the Windows tunnel-side port; the Mac serves on 8081 natively and
+    # the l4 router on 8082. Default left alone so existing runs are unchanged,
+    # but LLM_BASE_URL now overrides it, matching run_parity_benchmark.py.
+    parser.add_argument("--server",
+                        default=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"))
     parser.add_argument("--prompt", default=os.path.join(REPO, "res", "prompt_en_fixed.yaml"))
     parser.add_argument("--benchmark", default=MANIFEST)
     parser.add_argument("--case", default=None)
+    parser.add_argument("--model", default=None,
+                        help="override the arm's chat model, e.g. --model l4nj "
+                             "to run the same arm against a differently served "
+                             "tier. Pair it with --label-suffix so the two runs "
+                             "land in separate folders.")
     parser.add_argument("--map", default=None)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--no-stt-hints", action="store_true",
@@ -108,6 +144,14 @@ def main() -> None:
 
     for arm in selected:
         spec = ARMS[arm]
+        flags = list(spec["flags"])
+        if args.model:
+            # Drop the arm's own --model pair before appending the override,
+            # so the runner does not see the option twice.
+            if "--model" in flags:
+                i = flags.index("--model")
+                del flags[i:i + 2]
+            flags += ["--model", args.model]
         cmd = [
             args.python, RUNNER,
             "--server", args.server,
@@ -116,7 +160,7 @@ def main() -> None:
             "--warmup",
             "--out-dir", RESULTS,
             "--label", spec["label"] + suffix,
-        ] + spec["flags"]
+        ] + flags
         if not args.no_audio:
             cmd += ["--audio-dir", AUDIO_DIR, "--audio-only"]
         if args.no_stt_hints:

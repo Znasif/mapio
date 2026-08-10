@@ -1,0 +1,60 @@
+# Dependency definition for the packaged macOS build.
+#
+# requirements.txt stays the source of truth for the existing Windows client and
+# for a plain `pip install -r`; it is unchanged and still works. This file exists
+# because a package needs two things a requirements file cannot give:
+#
+#   - a lockfile, so every install gets the exact set that was tested rather than
+#     re-resolving. Re-resolution is not academic here: pyttsx3 and py3_tts both
+#     install a module named `pyttsx3`, and the loser of that race is whichever
+#     one the resolver happens to order second.
+#   - local wheel sources for the two dependencies that otherwise need Homebrew
+#     (pyaudio -> portaudio) and git+GitHub (the SpeechRecognition fork). Build
+#     them with packaging/build-wheels.sh.
+#
+# Keep the pins here in step with requirements.txt when either changes.
+
+[project]
+name = "mapio"
+version = "0.1.0"
+description = "MapIO with a local LLM and on-device speech, packaged for macOS"
+requires-python = "==3.11.*"
+
+# 3.11 is a ceiling, not a preference: mediapipe 0.10.9 publishes no wheel for
+# 3.12 or later, and numpy 1.24.4 stops at cp311 as well.
+dependencies = [
+    "mediapipe==0.10.9",
+    "numpy==1.24.4",
+    # Floor, not a pin: 1.40.2 passes proxies= to httpx.Client, which httpx
+    # removed in 0.28. 1.55.3 is the release that dropped it.
+    "openai>=1.55.3",
+    "opencv-contrib-python==4.6.0.66",
+    # py3_tts only -- never alongside pyttsx3. On macOS pyttsx3 2.90's nsss
+    # driver decorates with @objc.python_method without importing objc, and
+    # py3_tts is the fork that fixes exactly that.
+    "py3-tts==3.5",
+    "pynput==1.7.7",
+    "pygame==2.6.0",
+    "pyyaml==6.0.1",
+    "pyaudio==0.2.14",
+    "python-dotenv==1.0.1",
+    "speechrecognition==3.10.4",
+    # py3_tts pins pyobjc==9.0.1 on Darwin, whose objc/_bridgesupport.py imports
+    # pkg_resources -- dropped in setuptools 81 and absent from a uv venv
+    # entirely. pygame 2.6.0 imports it too.
+    "setuptools<81",
+]
+
+# google-cloud-speech is deliberately absent. The packaged build runs Apple's
+# on-device recogniser, and src/view/audio/stt.py only imports the Google client
+# when STT_BACKEND=google. Installing it would pull an old protobuf into the
+# same environment as mediapipe for a code path the package never takes.
+
+[tool.uv]
+# Nothing here is importable as a distribution -- mapio.py is run directly -- so
+# there is no build backend and nothing to build.
+package = false
+
+[tool.uv.sources]
+pyaudio = { path = "packaging/vendor/pyaudio-0.2.14-cp311-cp311-macosx_11_0_arm64.whl" }
+speechrecognition = { path = "packaging/vendor/speechrecognition-3.10.4-py2.py3-none-any.whl" }

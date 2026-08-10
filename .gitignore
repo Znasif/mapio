@@ -34,3 +34,5 @@ Scripts
 Lib
 Include
 pyvenv.cfg
+# Vendored wheels are build artifacts of packaging/build-wheels.sh
+packaging/vendor
