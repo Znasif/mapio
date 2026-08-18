@@ -732,35 +732,58 @@ def precompute_distances(
     return dist, prev
 
 
-directions = list(CardinalDirection.__members__.values())
-
-
 def get_direction(versor: Coords) -> CardinalDirection:
-    return get_turning_direction(versor, CardinalDirection.NORTH, Coords(0, -1))
+    """Which of north, south, east or west a displacement points in.
+
+    Only the four cardinals are ever spoken. The eight-point wheel this used to
+    walk described streets a finger follows as plain west as "south-west" or
+    "north-west", and a diagonal is a poor instruction on a tactile map: the
+    hand has to track two axes at once instead of one.
+
+    The rule is the dominant axis of the displacement, with its sign choosing
+    the side. That is not a new invention -- FlyOverNavigator has always
+    announced its four directions this way, and it now shares this function, so
+    fly-me-there and street-by-street speak one vocabulary instead of two.
+
+    For a unit vector, dominant axis is exactly nearest-of-four. Ties go to x,
+    matching the `max(range(2), key=...)` FlyOverNavigator used, which returns
+    the first index when both axes tie. The vector need not be normalised: only
+    the comparison and the signs matter.
+
+    CardinalDirection keeps all eight members. The diagonals stay valid values
+    -- WayPoint.NONE, anything already recorded -- they are simply never
+    produced here any more.
+    """
+
+    if abs(versor.x) >= abs(versor.y):
+        return CardinalDirection.EAST if versor.x >= 0 else CardinalDirection.WEST
+
+    # y grows downward in map coordinates, so positive y is south.
+    return CardinalDirection.SOUTH if versor.y >= 0 else CardinalDirection.NORTH
 
 
 def get_turning_direction(
     new_versor: Coords, old_direction: CardinalDirection, old_versor: Coords
 ) -> CardinalDirection:
-    # Clamped because acos is defined on [-1, 1] and the dot product of two
-    # unit vectors lands outside it through rounding alone -- 1.0000000000000002
-    # is enough to raise "math domain error", which surfaced as a failed
-    # guide_to_point_of_interest with no indication of the cause. Two versors
-    # pointing the same way is the common case here (a route continuing
-    # straight through a node), so this is on the hot path, not an edge case.
-    dot = max(-1.0, min(1.0, new_versor.dot(old_versor)))
-    angle = math.degrees(math.acos(dot))  # between 0 and 180
+    """The heading after a turn. Read absolutely, not accumulated.
 
-    direction_index = 0
-    side = (
-        1 if old_versor.cross_2d(new_versor) > 0 else -1
-    )  # 1 to go down the list, -1 to go up
+    This used to rotate `old_direction` by the turn angle, quantised to 45
+    degrees. Quantising that same walk to 90 degrees drifts, because a turn
+    smaller than half a step rounds to no step at all and the remainder is
+    never paid back. Measured on detroit_conant, Citizens Bank -> The
+    Australian: leg 1 runs at 267 degrees -- due west -- but sits only 43
+    degrees off leg 0, so it rounded to zero and announced "Continue straight"
+    while the walker turned west. The error then compounded: leg 3 at 319
+    degrees, which is north, came out west.
 
-    threshold = 22.5
-    while angle > threshold:
-        direction_index += 1
-        angle -= 45
+    Reading the heading straight off the new versor cannot drift.
+    __process_instructions still says "Continue straight" by comparing
+    consecutive headings, so the prose is unchanged where the heading is.
 
-    return directions[
-        (directions.index(old_direction) + side * direction_index) % len(directions)
-    ]
+    The old arguments are kept: they document what the call site is asking for,
+    and dropping them would be a signature change for no gain.
+    """
+
+    del old_direction, old_versor  # absolute now -- see the docstring
+
+    return get_direction(new_versor)

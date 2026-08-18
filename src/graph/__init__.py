@@ -4,7 +4,7 @@ from typing import Any
 from .edge import Edge
 from .edge import Features as EdgeFeatures
 from .edge import Street
-from .graph import Graph, RouteAction, WayPoint
+from .graph import Graph, RouteAction, WayPoint, get_direction
 from .node import Features as NodeFeatures
 from .node import Node
 from .poi import PoI
@@ -40,4 +40,5 @@ __all__ = [
     "WayPoint",
     "PoI",
     "RouteAction",
+    "get_direction",
 ]

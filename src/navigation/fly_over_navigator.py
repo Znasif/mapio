@@ -1,13 +1,9 @@
 import time
 
-from src.graph import Graph, WayPoint
+from src.graph import Graph, WayPoint, get_direction
 from src.position import PositionInfo
-from src.utils import CardinalDirection
 
 from .navigator import ActionHandler, Navigator
-
-directions = list(CardinalDirection.__members__.values())
-north_index = directions.index(CardinalDirection.NORTH)
 
 
 class FlyOverNavigator(Navigator):
@@ -46,12 +42,11 @@ class FlyOverNavigator(Navigator):
             return
 
         error = self.destination.coords - position.real_pos
-        max_index = max(range(2), key=lambda i: abs(error[i]))
 
-        direction = directions[
-            (north_index + (max_index + 1) * 2 + (4 if error[max_index] < 0 else 0))
-            % len(directions)
-        ].value
+        # The dominant-axis rule this used to spell out inline now lives in
+        # get_direction, which street-by-street headings also go through. Same
+        # four directions, same tie-break; one definition instead of two.
+        direction = get_direction(error).value
 
         if distance > self.far_threshold:
             direction = f"far {direction}"
