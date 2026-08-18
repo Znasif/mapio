@@ -33,6 +33,7 @@ LLAMA_VERSION="${MAPIO_LLAMA_VERSION:-b10344}"
 # LaunchAgents directory, where a stray plist outlives the test.
 AGENTS="${MAPIO_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 BOOTSTRAP=1
+PULL=1
 DRY=0
 
 while [ $# -gt 0 ]; do
@@ -46,6 +47,7 @@ while [ $# -gt 0 ]; do
     --llama-version) LLAMA_VERSION="$2"; shift 2 ;;
     --agents-dir)   AGENTS="$2"; shift 2 ;;
     --no-bootstrap) BOOTSTRAP=0; shift ;;
+    --no-pull)      PULL=0; shift ;;
     --dry-run)      DRY=1; BOOTSTRAP=0; shift ;;
     -h|--help)      sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "install: unknown argument $1" >&2; exit 1 ;;
@@ -401,6 +403,36 @@ else
   echo "    launchctl bootstrap gui/\$(id -u) $AGENTS/$LABEL.stt.plist"
 fi
 
+# ---------------------------------------------------------------------------
+# Model weights
+# ---------------------------------------------------------------------------
+# Not bundled: llama.cpp pulls them from Hugging Face on first use. Doing that
+# lazily means the user's first spoken question hangs for as long as a ~5 GB
+# download takes, with mapio showing only "Waiting for a response..." -- the
+# warm-up thread that would report progress is itself queued behind the
+# download. Pull them here, where waiting is expected and progress is visible.
+if [ "$BOOTSTRAP" = 1 ] && [ "$PULL" = 1 ] && [ "$DRY" = 0 ]; then
+  say "downloading model weights (~5 GB, once)"
+  cache_size() { du -sm "$HOME/.cache/huggingface" 2>/dev/null | cut -f1 || echo 0; }
+  before="$(cache_size)"
+
+  for tier in l1 l3; do
+    echo "    $tier ..."
+    curl -s --max-time 3600 "http://127.0.0.1:$LLM_PORT/v1/chat/completions" \
+      -H 'Content-Type: application/json' \
+      -d "{\"model\":\"$tier\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+      >/dev/null 2>&1 || true
+  done
+
+  after="$(cache_size)"
+  echo "    cache $HOME/.cache/huggingface is now ${after} MB (was ${before} MB)"
+
+  ready=0
+  curl -s --max-time 10 "http://127.0.0.1:$LLM_PORT/v1/models" 2>/dev/null \
+    | grep -q '"l3"' && ready=1
+  [ "$ready" = 1 ] || echo "    WARNING: l3 did not report in; check ~/Library/Logs/mapio-llm.log" >&2
+fi
+
 cat <<DONE
 
 MapIO installed.
@@ -422,5 +454,6 @@ saves the chat. Ctrl-C interrupts while the process is usually blocked inside
 PortAudio or OpenCV, so cleanup does not finish and the process can survive
 holding the camera and microphone -- after which the next run cannot open them.
 
-Models download on first use (~5 GB) and are cached by llama.cpp.
+Model weights live in ~/.cache/huggingface and are shared by every install.
+Re-running this installer never downloads them twice.
 DONE
