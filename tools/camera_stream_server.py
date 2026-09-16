@@ -60,30 +60,44 @@ class CameraStreamer:
     def __init__(
         self,
         camera_index: int = 0,
+        video_path: Optional[str] = None,
         width: int = 640,
         height: int = 480,
         target_fps: int = 30,
         jpeg_quality: int = 75,
     ):
         self.camera_index = camera_index
+        self.video_path = video_path
+        self.is_video_file = bool(video_path)
         self.width = width
         self.height = height
         self.target_fps = target_fps
         self.jpeg_quality = jpeg_quality
 
-        api_preference = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-        self.cap = cv2.VideoCapture(self.camera_index, api_preference)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Could not open camera {self.camera_index}")
+        if self.is_video_file:
+            if not os.path.isfile(self.video_path):
+                raise FileNotFoundError(f"Video file not found: {self.video_path}")
+            self.cap = cv2.VideoCapture(self.video_path)
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Could not open video file {self.video_path}")
+            vid_fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if vid_fps and vid_fps > 0:
+                self.target_fps = int(round(vid_fps))
+            print(f"[Video] Opened file '{self.video_path}' ({int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} @ {self.target_fps} FPS, looping)")
+        else:
+            api_preference = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+            self.cap = cv2.VideoCapture(self.camera_index, api_preference)
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Could not open camera {self.camera_index}")
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        self.cap.set(cv2.CAP_PROP_FPS, self.target_fps)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            self.cap.set(cv2.CAP_PROP_FPS, self.target_fps)
 
-        # Actual properties negotiated with driver
-        actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"[Camera] Opened index {camera_index} ({actual_w}x{actual_h} @ target {target_fps} FPS)")
+            # Actual properties negotiated with driver
+            actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            print(f"[Camera] Opened index {camera_index} ({actual_w}x{actual_h} @ target {self.target_fps} FPS)")
 
         self.running = True
         self.lock = threading.Lock()
@@ -100,13 +114,26 @@ class CameraStreamer:
     def _capture_loop(self):
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
         frame_times = []
+        frame_interval = 1.0 / max(1, self.target_fps)
 
         while self.running:
+            loop_start = time.time()
             ret, frame = self.cap.read()
-            now = time.time()
+            now = loop_start
+
             if not ret or frame is None:
-                time.sleep(0.01)
-                continue
+                if self.is_video_file:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+                    if not ret or frame is None:
+                        time.sleep(0.01)
+                        continue
+                else:
+                    time.sleep(0.01)
+                    continue
+
+            if self.width and self.height and (frame.shape[1] != self.width or frame.shape[0] != self.height):
+                frame = cv2.resize(frame, (self.width, self.height))
 
             ok, jpeg = cv2.imencode(".jpg", frame, encode_params)
             if not ok:
@@ -127,6 +154,12 @@ class CameraStreamer:
                 elapsed = frame_times[-1] - frame_times[0]
                 if elapsed > 0:
                     self.fps_measured = (len(frame_times) - 1) / elapsed
+
+            if self.is_video_file:
+                process_dur = time.time() - loop_start
+                sleep_dur = frame_interval - process_dur
+                if sleep_dur > 0:
+                    time.sleep(sleep_dur)
 
     def get_latest_frame(self) -> Tuple[Optional[bytes], float, int]:
         with self.lock:
@@ -238,6 +271,7 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="Host address to bind to (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=5000, help="Port to listen on (default: 5000)")
     parser.add_argument("--camera", type=int, default=0, help="Camera device index (default: 0)")
+    parser.add_argument("--video", type=str, default=None, help="Path to video file to stream in a loop instead of live camera")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
     parser.add_argument("--fps", type=int, default=30, help="Target FPS (default: 30)")
@@ -250,6 +284,7 @@ def main():
 
     streamer = CameraStreamer(
         camera_index=args.camera,
+        video_path=args.video,
         width=args.width,
         height=args.height,
         target_fps=args.fps,
