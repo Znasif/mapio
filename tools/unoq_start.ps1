@@ -23,7 +23,9 @@ Write-Host "[3/4] pushing pipeline to the board..."
 & $adb push "$root\tools\unoq_perception_pipeline.py" /home/arduino/unoq_perception_pipeline.py | Out-Null
 & $adb push "$root\tools\unoq_run_pipeline.sh"        /home/arduino/unoq_run_pipeline.sh | Out-Null
 # The board runs mapio's own graph engine; ship just the packages it needs (no UI/LLM code).
-foreach ($d in "config","utils","graph","position") { & $adb push "$root\src\$d" /home/arduino/src/$d | Out-Null }
+# Push to the PARENT dir: adb nests a directory inside an existing target of the same name.
+& $adb shell "mkdir -p /home/arduino/src; rm -rf /home/arduino/src/*/__pycache__"
+foreach ($d in "config","utils","graph","position") { & $adb push "$root\src\$d" /home/arduino/src/ | Out-Null }
 & $adb push "$root\src\modules_repository.py" /home/arduino/src/modules_repository.py | Out-Null
 & $adb push "$root\models\new_york\new_york.json" /home/arduino/models/new_york/new_york.json | Out-Null
 

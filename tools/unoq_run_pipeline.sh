@@ -18,6 +18,7 @@ case "${1:-start}" in
     bluetoothctl connect 98:59:49:36:6F:D1 >/dev/null 2>&1   # no-op if already connected
     # Extra args pass through, e.g. `start --remap` when the BART tactile map is under the camera.
     nohup "$PY" -u /home/arduino/unoq_perception_pipeline.py "$@" > "$LOG" 2>&1 &
-    echo "[board] pipeline pid $!"
+    pid=$!; sleep 4
+    if kill -0 "$pid" 2>/dev/null; then echo "[board] pipeline pid $pid"; else echo "[board] PIPELINE FAILED TO START:"; tail -8 "$LOG"; exit 1; fi
     ;;
 esac
