@@ -153,6 +153,36 @@ class SpeechAnnouncer:
         self.worker: Optional[threading.Thread] = None
         self.pending: Optional[str] = None
 
+    def start_bt_keepalive(self, mac: str, interval_s: float = 5.0) -> None:
+        """Reconnect the glasses if they drop (idle timeout, case, phone stealing them) and
+        make them the default sink again, otherwise speech silently goes to the 3.5 mm jack."""
+        def loop():
+            was_connected = None
+            while True:
+                try:
+                    info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=10).stdout
+                    connected = "Connected: yes" in info
+                    if not connected:
+                        subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, timeout=20)
+                        time.sleep(4)
+                        info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=10).stdout
+                        connected = "Connected: yes" in info
+                    if connected and not was_connected:
+                        # find the bluez sink id and make it default
+                        status = subprocess.run(["wpctl", "status"], capture_output=True, text=True, env=self.env, timeout=10).stdout
+                        sinks = status.split("Sinks:", 1)[-1].split("Sources:", 1)[0]
+                        m = re.search(r"(\d+)\.\s+RB Meta", sinks)
+                        if m:
+                            subprocess.run(["wpctl", "set-default", m.group(1)], env=self.env, timeout=10)
+                        print(f"[Speech] glasses connected (sink {m.group(1) if m else '?'})", flush=True)
+                    elif not connected and was_connected:
+                        print("[Speech] glasses disconnected; retrying every %.0fs" % interval_s, flush=True)
+                    was_connected = connected
+                except Exception as e:
+                    print(f"[Speech] bt keepalive: {e}", flush=True)
+                time.sleep(interval_s)
+        threading.Thread(target=loop, daemon=True).start()
+
     def say(self, text: str) -> None:
         """Queue `text`; a newer utterance replaces any not-yet-started one."""
         if not self.enabled:
@@ -613,6 +643,7 @@ def main():
     parser.add_argument("--model", default="/home/arduino/models/new_york/new_york.json", help="Model JSON for topological graph")
     parser.add_argument("--remap", action="store_true", help="Remap BART template coords to New York graph bounds")
     parser.add_argument("--no-speech", action="store_true", help="Disable spoken POI announcements (espeak-ng -> default PipeWire sink)")
+    parser.add_argument("--glasses-mac", default="98:59:49:36:6F:D1", help="Bluetooth MAC of the audio device to keep connected (default: RB Meta 0118)")
     args = parser.parse_args()
 
     print("\n========================================================")
@@ -641,6 +672,7 @@ def main():
 
         speech = None if args.no_speech else SpeechAnnouncer()
         if speech and speech.enabled:
+            speech.start_bt_keepalive(args.glasses_mac)
             speech.say("Uno Q ready")
 
         fps_times = []
