@@ -151,11 +151,11 @@ class MapIOController:
 
         self.keyboard.init_shortcuts()
 
-        # The welcome, the instructions and the map description take several
-        # seconds to speak. Spend them priming the model's prefix, so the first
-        # question does not pay the prefill on top of its own answer.
+        # Prime the model's prefix cache synchronously before opening windows,
+        # so all subsequent voice questions are instantaneous and share the warm KV cache.
         if config.llm_enabled:
-            th.Thread(target=self.__warm_up_llm, daemon=True).start()
+            print("\nPriming model KV cache with map graph in GenieX (one-time prefill)...", flush=True)
+            self.__warm_up_llm()
 
         self.tts.welcome()
         self.tts.instructions()
@@ -227,7 +227,9 @@ class MapIOController:
     def __warm_up_llm(self) -> None:
         elapsed = self.llm.warm_up()
         if elapsed is not None:
-            print(f"Model prefix warm in {elapsed}s")
+            print(f"Model prefix warm in {elapsed}s! KV cache primed. Opening debug windows...", flush=True)
+        else:
+            print("Warning: LLM warm-up did not complete cleanly.", flush=True)
 
     def is_handling_user_input(self) -> bool:
         return self.command_controller.is_handling_command()
