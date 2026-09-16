@@ -48,8 +48,23 @@ class ViewManager(Module):
         self.template: npt.NDArray[np.uint8]
         self.waypoints: List[Coords] = list()
 
+        # Configure main camera feed window to be resizable and fit laptop screens
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.window_name, 960, 540)
+        cv2.moveWindow(self.window_name, 30, 50)
+
         if config.debug:
             self.template = cv2.imread(config.template_path, cv2.IMREAD_COLOR)
+            debug_win_name = f"{self.window_name} - Debug"
+            cv2.namedWindow(debug_win_name, cv2.WINDOW_NORMAL)
+            if self.template is not None:
+                th, tw = self.template.shape[:2]
+                target_h = 540
+                target_w = int(tw * (target_h / th)) if th > 0 else 540
+                cv2.resizeWindow(debug_win_name, target_w, target_h)
+            else:
+                cv2.resizeWindow(debug_win_name, 600, 540)
+            cv2.moveWindow(debug_win_name, 1010, 50)
 
     @property
     def window_name(self) -> str:
