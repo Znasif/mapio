@@ -40,3 +40,7 @@ packaging/vendor
 # Built by packaging/build-speechcli.sh (signed per release)
 tools/macos_stt/legacyspeechcli.app
 tools/macos_stt/speechcli
+
+# Large media / binaries never belong in git (GitHub hard limit 100 MB); keep them in ..\mapio_large_files
+*.mp4
+*.exe

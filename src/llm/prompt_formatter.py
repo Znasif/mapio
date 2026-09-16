@@ -202,10 +202,13 @@ class PromptFormatter:
                 )
                 result = "Navigation mode is now enabled."
 
-            elif fnc == ToolCall.ENABLE_POINTS_OF_INTERESTS:
-                if params["disable_previous"]:
+            elif fnc in (ToolCall.ENABLE_POINTS_OF_INTERESTS, "enable_points_of_interest"):
+                if params.get("disable_previous", True):
                     self.graph.disable_pois()
-                self.graph.enable_pois(params["points_of_interest"])
+                pois = params.get("points_of_interest", [])
+                if isinstance(pois, (int, float)):
+                    pois = [int(pois)]
+                self.graph.enable_pois(pois)
                 result = "Points of interest are now enabled."
 
             else:

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MapIO — Explore Maps by Touch</title>
+<style>
+  @page { size: 13.333in 7.5in; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: "Segoe UI", "Segoe UI Variable", Inter, Arial, sans-serif; color: #14213d; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  :root {
+    --navy: #14213d; --ink: #1f2a44; --muted: #5c6b8a; --line: #d9deea;
+    --accent: #e63946; --teal: #0f8b8d; --gold: #f4a261; --paper: #f7f8fb;
+  }
+
+  .slide { width: 13.333in; height: 7.5in; position: relative; overflow: hidden; page-break-after: always; padding: 0.55in 0.7in; background: #fff; }
+  .slide:last-child { page-break-after: auto; }
+  .slide.dark { background: var(--navy); color: #fff; }
+  .slide.dark .muted { color: #b8c1d9; }
+
+  .kicker { font-size: 13pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin: 0 0 0.12in; }
+  .dark .kicker { color: var(--gold); }
+  h1 { font-size: 46pt; line-height: 1.05; margin: 0 0 0.2in; font-weight: 800; letter-spacing: -0.01em; }
+  h2 { font-size: 30pt; line-height: 1.1; margin: 0 0 0.25in; font-weight: 800; letter-spacing: -0.01em; }
+  h3 { font-size: 15pt; margin: 0 0 0.08in; font-weight: 700; }
+  p, li { font-size: 14.5pt; line-height: 1.35; margin: 0; }
+  .muted { color: var(--muted); }
+  .small, .small li { font-size: 11.5pt; }
+  ul { margin: 0; padding-left: 0.22in; }
+  li + li { margin-top: 0.09in; }
+  .footer { position: absolute; left: 0.7in; right: 0.7in; bottom: 0.3in; display: flex; justify-content: space-between; font-size: 9.5pt; color: var(--muted); }
+  .dark .footer { color: #8e9bbd; }
+
+  .cols { display: grid; gap: 0.4in; height: calc(100% - 0.9in); }
+  .cols.two { grid-template-columns: 1.05fr 1fr; }
+  .cols.two-wide { grid-template-columns: 1fr 1.35fr; }
+  .cols.three { grid-template-columns: 1fr 1fr 1fr; }
+
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border-radius: 10px; box-shadow: 0 6px 22px rgba(20,33,61,0.18); }
+  figcaption { font-size: 10pt; color: var(--muted); margin-top: 0.08in; }
+
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 0.22in 0.26in; }
+  .card h3 { color: var(--teal); }
+  .card.accent { border-left: 6px solid var(--accent); }
+  .card.gold { border-left: 6px solid var(--gold); }
+  .card.teal { border-left: 6px solid var(--teal); }
+
+  .stat { font-size: 34pt; font-weight: 800; color: var(--navy); line-height: 1; }
+  .stat small { font-size: 12pt; color: var(--muted); font-weight: 600; display: block; margin-top: 0.06in; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13pt; }
+  th, td { text-align: left; padding: 0.1in 0.14in; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 11pt; text-transform: uppercase; letter-spacing: 0.08em; }
+  td.good { color: var(--teal); font-weight: 700; }
+  td.meh { color: var(--muted); }
+
+  .chip { display: inline-block; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 0.03in 0.13in; font-size: 11pt; margin: 0.03in 0.05in 0.03in 0; font-family: Consolas, "Cascadia Code", monospace; }
+  .quote { font-size: 17pt; font-style: italic; line-height: 1.35; color: var(--ink); border-left: 4px solid var(--accent); padding-left: 0.2in; }
+
+  .title-bg { position: absolute; right: -0.4in; top: 0.6in; width: 6.6in; opacity: 0.95; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.45); transform: rotate(-2deg); }
+  .title-wrap { position: relative; z-index: 2; width: 6.4in; margin-top: 0.9in; }
+</style>
+</head>
+<body>
+
+<!-- 1. Title -->
+<section class="slide dark">
+  <img class="title-bg" src="images/unoq_annotated_bart.jpg" alt="Uno Q edge perception: fingertip tracked on a tactile BART map">
+  <div class="title-wrap">
+    <p class="kicker">MapIO · Qualcomm Edition</p>
+    <h1>Explore a map<br>with your finger.<br>Hear what's there.</h1>
+    <p class="muted" style="font-size:16pt; margin-top:0.15in;">Audio-tactile maps with fingertip tracking, a local LLM on Snapdragon X Elite, and a sub-$60 standalone client on Arduino UNO Q.</p>
+  </div>
+  <div class="footer"><span>MapIO</span><span>Snapdragon X Elite · Arduino UNO Q (QRB2210) · Ray-Ban Meta</span></div>
+</section>
+
+<!-- 2. Motivation -->
+<section class="slide">
+  <p class="kicker">Motivation</p>
+  <h2>Great for navigation. Inaccessible for exploration.</h2>
+  <div class="cols two">
+    <div>
+      <div class="card accent" style="margin-bottom:0.22in;">
+        <h3 style="color:var(--accent)">Digital maps</h3>
+        <p>Turn-by-turn works with a screen reader. But <b>exploring</b> — what's around here, how the streets lie, what's two blocks over — is a visual act. A blind user gets a list, never a layout.</p>
+      </div>
+      <div class="card gold">
+        <h3 style="color:#c97a2b">Tactile maps</h3>
+        <p>Embossed streets give real spatial layout under the fingers. The price is <b>information density</b>: a sheet fits a dozen braille labels, and nothing else — no store names, hours, distances, or "what is this?"</p>
+      </div>
+    </div>
+    <figure>
+      <img src="images/tactile_maps_bart_wisconsin.jpg" alt="Two embossed tactile maps: a BART transit map with braille labels and a Wisconsin county map">
+      <figcaption>Embossed tactile maps: excellent layout, a handful of labels per sheet.</figcaption>
+    </figure>
+  </div>
+  <div class="footer"><span>MapIO</span><span>2 / 9</span></div>
+</section>
+
+<!-- 3. The idea -->
+<section class="slide">
+  <p class="kicker">The idea</p>
+  <h2>Your fingertip is your avatar. The map's information is virtual — and audio.</h2>
+  <div class="cols two-wide">
+    <div>
+      <ul>
+        <li>A camera looks down at an ordinary tactile map. <b>SIFT homography</b> locks the sheet; <b>MediaPipe</b> tracks the index fingertip.</li>
+        <li>Fingertip → map coordinates → a topological <b>street &amp; POI graph</b>. Wherever you touch, you hear what's there.</li>
+        <li>The tactile sheet stays sparse and cheap. The <b>audio layer is unbounded</b>: names, distances, details, routes — density limited by curiosity, not emboss space.</li>
+        <li>Nothing on the map changes. Any existing tactile map becomes an interactive one.</li>
+      </ul>
+    </div>
+    <div>
+      <figure style="margin-bottom:0.18in;">
+        <img style="height:2.05in; object-fit:cover" src="images/hue_live_ny_map.jpg" alt="Downward camera view of a New York street-grid tactile map">
+        <figcaption>Camera view: a Lighthouse-SF NYC street map (20 W 34th St).</figcaption>
+      </figure>
+      <figure>
+        <img style="height:2.05in; object-fit:cover" src="images/unoq_annotated_bart.jpg" alt="Annotated frame: map locked with 38 inliers, fingertip on map, POI Bank of America">
+        <figcaption>Live perception on the UNO Q: map locked, fingertip mapped, nearest POI resolved.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="footer"><span>MapIO</span><span>3 / 9</span></div>
+</section>
+
+<!-- 4. LLM: open-ended + deterministic -->
+<section class="slide">
+  <p class="kicker">Ask anything</p>
+  <h2>Open-ended questions from an LLM. Deterministic answers from tools.</h2>
+  <div class="cols two">
+    <div>
+      <p class="quote">"What's the closest place to get coffee, and how far is it from where my finger is?"</p>
+      <p style="margin-top:0.25in;">Free-form questions are what make exploration feel natural. But distances, directions and "am I here?" must be <b>right</b>, not plausible. So the model doesn't guess — it <b>calls tools on the map graph</b> and speaks the result.</p>
+      <div style="margin-top:0.22in;">
+        <span class="chip">get_distance</span><span class="chip">get_nearby_points_of_interest</span><span class="chip">am_i_at_point_of_interest</span><span class="chip">get_point_of_interest_details</span><span class="chip">guide_to_destination</span>
+      </div>
+    </div>
+    <div>
+      <div class="card teal" style="margin-bottom:0.2in;">
+        <h3>Runs on the laptop's NPU, not in the cloud</h3>
+        <p>Gemma 4 E2B (Q4) served by <b>Qualcomm AI Hub GenieX</b> on the Snapdragon X Elite — an OpenAI-compatible endpoint on <code>localhost</code>. Private, offline, no per-query cost.</p>
+      </div>
+      <div class="card">
+        <h3>Position is always in the prompt</h3>
+        <p>Every question carries the fingertip's map coordinates, so "here", "this", and "nearby" resolve to real places. Tool results are read back as spoken announcements with priority and category, the same pipeline as touch feedback.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>MapIO</span><span>4 / 9</span></div>
+</section>
+
+<!-- 5. Two Qualcomm chips -->
+<section class="slide">
+  <p class="kicker">Hardware</p>
+  <h2>Two Qualcomm chips, two roles.</h2>
+  <div class="cols three">
+    <div class="card teal">
+      <h3>Snapdragon X Elite — the brain</h3>
+      <p class="stat">1<small>local LLM server per room</small></p>
+      <ul class="small" style="margin-top:0.12in;">
+        <li>GenieX serving Gemma 4 on Hexagon NPU / Adreno GPU</li>
+        <li>Speech-to-text + question answering</li>
+        <li>Never leaves the building</li>
+      </ul>
+    </div>
+    <div class="card gold">
+      <h3>Arduino UNO Q — the station</h3>
+      <p class="stat">&lt;$60<small>per map station (QRB2210, Linux)</small></p>
+      <ul class="small" style="margin-top:0.12in;">
+        <li>Runs the whole perception loop on-device: SIFT lock, MediaPipe hand tracking, graph lookup, TTS</li>
+        <li>Wi-Fi + Bluetooth on board</li>
+        <li>Camera + power = a standalone map</li>
+      </ul>
+    </div>
+    <div class="card accent">
+      <h3>Ray-Ban Meta — the voice</h3>
+      <p class="stat">0<small>wires to the user</small></p>
+      <ul class="small" style="margin-top:0.12in;">
+        <li>Paired directly to the UNO Q over Bluetooth A2DP (BlueZ + PipeWire)</li>
+        <li>Open-ear audio: hear the map and the room</li>
+        <li>Mic ready for voice questions</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>MapIO</span><span>5 / 9</span></div>
+</section>
+
+<!-- 6. Architecture -->
+<section class="slide">
+  <p class="kicker">System architecture</p>
+  <h2>Perception at the edge, reasoning in the room.</h2>
+  <svg viewBox="0 0 1200 470" width="100%" style="height:5.2in" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+    <defs>
+      <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b8a"/></marker>
+      <marker id="arrR" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e63946"/></marker>
+    </defs>
+    <!-- Station box -->
+    <rect x="20" y="30" width="700" height="410" rx="16" fill="#f7f8fb" stroke="#d9deea"/>
+    <text x="40" y="62" font-size="20" font-weight="700" fill="#14213d">Map station — Arduino UNO Q (QRB2210, Debian)</text>
+    <text x="40" y="84" font-size="13" fill="#5c6b8a">one per tactile map · standalone · &lt;$60 + camera</text>
+
+    <!-- camera -->
+    <rect x="40" y="110" width="150" height="70" rx="10" fill="#fff" stroke="#0f8b8d" stroke-width="2"/>
+    <text x="115" y="140" text-anchor="middle" font-size="15" font-weight="700" fill="#0f8b8d">USB camera</text>
+    <text x="115" y="160" text-anchor="middle" font-size="12" fill="#5c6b8a">looking down at map</text>
+
+    <!-- perception pipeline -->
+    <rect x="230" y="100" width="300" height="200" rx="10" fill="#fff" stroke="#14213d" stroke-width="2"/>
+    <text x="380" y="126" text-anchor="middle" font-size="15" font-weight="700" fill="#14213d">On-device perception</text>
+    <text x="250" y="152" font-size="13" fill="#1f2a44">① SIFT + RANSAC homography → map lock</text>
+    <text x="250" y="176" font-size="13" fill="#1f2a44">② MediaPipe Hands → index fingertip</text>
+    <text x="250" y="200" font-size="13" fill="#1f2a44">③ fingertip → map px → feet</text>
+    <text x="250" y="224" font-size="13" fill="#1f2a44">④ street / POI graph query</text>
+    <text x="250" y="248" font-size="13" fill="#1f2a44">⑤ announcement rules (dwell, no-repeat)</text>
+    <text x="250" y="272" font-size="13" fill="#1f2a44">⑥ espeak-ng TTS → PipeWire</text>
+
+    <!-- glasses -->
+    <rect x="570" y="110" width="130" height="70" rx="10" fill="#fff" stroke="#e63946" stroke-width="2"/>
+    <text x="635" y="140" text-anchor="middle" font-size="15" font-weight="700" fill="#e63946">Ray-Ban Meta</text>
+    <text x="635" y="160" text-anchor="middle" font-size="12" fill="#5c6b8a">A2DP out · HFP mic</text>
+
+    <!-- map graph -->
+    <rect x="40" y="220" width="150" height="80" rx="10" fill="#fff" stroke="#f4a261" stroke-width="2"/>
+    <text x="115" y="250" text-anchor="middle" font-size="14" font-weight="700" fill="#c97a2b">Map model</text>
+    <text x="115" y="270" text-anchor="middle" font-size="11.5" fill="#5c6b8a">template.png + graph.json</text>
+    <text x="115" y="287" text-anchor="middle" font-size="11.5" fill="#5c6b8a">streets · POIs · scale</text>
+
+    <!-- voice question path -->
+    <rect x="230" y="330" width="300" height="90" rx="10" fill="#fff" stroke="#5c6b8a" stroke-dasharray="6 4" stroke-width="2"/>
+    <text x="380" y="356" text-anchor="middle" font-size="14" font-weight="700" fill="#14213d">Voice question client</text>
+    <text x="250" y="380" font-size="12.5" fill="#1f2a44">mic audio + fingertip position → X Elite</text>
+    <text x="250" y="402" font-size="12.5" fill="#1f2a44">spoken answer ← X Elite</text>
+
+    <!-- arrows in station -->
+    <line x1="190" y1="145" x2="228" y2="145" stroke="#5c6b8a" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="190" y1="260" x2="228" y2="235" stroke="#5c6b8a" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="530" y1="145" x2="568" y2="145" stroke="#e63946" stroke-width="2.5" marker-end="url(#arrR)"/>
+    <text x="549" y="132" text-anchor="middle" font-size="10.5" fill="#e63946">BT</text>
+    <line x1="380" y1="300" x2="380" y2="328" stroke="#5c6b8a" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <line x1="635" y1="180" x2="635" y2="365" stroke="#e63946" stroke-width="2" stroke-dasharray="5 4"/>
+    <line x1="635" y1="365" x2="532" y2="365" stroke="#e63946" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrR)"/>
+    <text x="660" y="300" text-anchor="end" font-size="10.5" fill="#e63946">mic (HFP)</text>
+
+    <!-- Wi-Fi link -->
+    <line x1="720" y1="235" x2="820" y2="235" stroke="#14213d" stroke-width="3" marker-end="url(#arr)"/>
+    <line x1="820" y1="255" x2="722" y2="255" stroke="#14213d" stroke-width="3" marker-end="url(#arr)"/>
+    <text x="770" y="222" text-anchor="middle" font-size="12" font-weight="700" fill="#14213d">Wi-Fi / LAN</text>
+    <text x="770" y="292" text-anchor="middle" font-size="10.5" fill="#5c6b8a">OpenAI-compatible HTTP</text>
+
+    <!-- X Elite box -->
+    <rect x="830" y="30" width="360" height="410" rx="16" fill="#14213d"/>
+    <text x="850" y="62" font-size="19" font-weight="700" fill="#fff">Room server — Snapdragon X Elite</text>
+    <text x="850" y="84" font-size="13" fill="#b8c1d9">one per building · fully local</text>
+
+    <rect x="850" y="110" width="310" height="80" rx="10" fill="#1f2f57" stroke="#3b4d7a"/>
+    <text x="1005" y="140" text-anchor="middle" font-size="15" font-weight="700" fill="#f4a261">Speech-to-text</text>
+    <text x="1005" y="162" text-anchor="middle" font-size="12" fill="#b8c1d9">Whisper / web speech · shared by all stations</text>
+
+    <rect x="850" y="210" width="310" height="120" rx="10" fill="#1f2f57" stroke="#3b4d7a"/>
+    <text x="1005" y="240" text-anchor="middle" font-size="15" font-weight="700" fill="#f4a261">LLM — Gemma 4 E2B via GenieX</text>
+    <text x="1005" y="262" text-anchor="middle" font-size="12" fill="#b8c1d9">Hexagon NPU · 24k-token context</text>
+    <text x="1005" y="286" text-anchor="middle" font-size="12" fill="#b8c1d9">open-ended reasoning over the map graph</text>
+    <text x="1005" y="308" text-anchor="middle" font-size="12" fill="#b8c1d9">tool calls → deterministic distances &amp; routes</text>
+
+    <rect x="850" y="350" width="310" height="70" rx="10" fill="#1f2f57" stroke="#3b4d7a"/>
+    <text x="1005" y="378" text-anchor="middle" font-size="15" font-weight="700" fill="#f4a261">Map tools</text>
+    <text x="1005" y="400" text-anchor="middle" font-size="12" fill="#b8c1d9">get_distance · nearby POIs · guide_to_destination</text>
+  </svg>
+  <div class="footer"><span>MapIO</span><span>6 / 9</span></div>
+</section>
+
+<!-- 7. Why not just a laptop -->
+<section class="slide">
+  <p class="kicker">Design choice</p>
+  <h2>A laptop alone works. The UNO Q changes what's possible.</h2>
+  <p class="muted" style="margin-bottom:0.2in;">MapIO runs end-to-end on the X Elite (camera, LLM, speech) — that is a valid deployment. Splitting perception onto a UNO Q per map is what makes it deployable at scale.</p>
+  <table>
+    <tr><th style="width:24%"></th><th>Laptop-only</th><th>UNO Q station + X Elite server</th></tr>
+    <tr><td><b>Cost per map</b></td><td class="meh">a full laptop, dedicated</td><td class="good">&lt;$60 board + webcam; one laptop shared</td></tr>
+    <tr><td><b>Footprint</b></td><td class="meh">laptop on the table, lid open</td><td class="good">board tapes under the table; power bank runs it</td></tr>
+    <tr><td><b>Setup by staff</b></td><td class="meh">launch app, pick camera, keep awake</td><td class="good">plug in → boots → speaks "Map detected"</td></tr>
+    <tr><td><b>Touch feedback latency</b></td><td class="good">local</td><td class="good">local — perception never crosses the network</td></tr>
+    <tr><td><b>Many maps, one room</b></td><td class="meh">N laptops, N LLM copies</td><td class="good">N boards, 1 LLM — questions queue, touch never waits</td></tr>
+    <tr><td><b>Privacy</b></td><td class="good">on-device</td><td class="good">on-premises; nothing leaves the LAN</td></tr>
+    <tr><td><b>Audio to user</b></td><td class="meh">laptop speaker / wired</td><td class="good">Bluetooth to the user's own glasses</td></tr>
+  </table>
+  <div class="footer"><span>MapIO</span><span>7 / 9</span></div>
+</section>
+
+<!-- 8. Future -->
+<section class="slide dark">
+  <p class="kicker">Future directions</p>
+  <h2>Many stations. One brain. Then no brain needed.</h2>
+  <div class="cols three" style="height:auto; margin-top:0.1in;">
+    <div class="card" style="background:#1f2f57; border-color:#3b4d7a;">
+      <h3 style="color:var(--gold)">1 · Fleet of stations</h3>
+      <p style="color:#e6eaf5;" class="small">A museum floor or a classroom: every tactile map gets a UNO Q + camera. All of them speak to <b>one X Elite</b> for STT and Q&amp;A. Per-map cost stays flat; the server cost is paid once.</p>
+    </div>
+    <div class="card" style="background:#1f2f57; border-color:#3b4d7a;">
+      <h3 style="color:var(--gold)">2 · STT on the UNO Q itself</h3>
+      <p style="color:#e6eaf5;" class="small">Whisper-tiny class models fit the QRB2210. With the glasses' mic over HFP, the station transcribes locally and only sends <b>text + position</b> to the server — lower bandwidth, lower load, works over weak Wi-Fi.</p>
+    </div>
+    <div class="card" style="background:#1f2f57; border-color:#3b4d7a;">
+      <h3 style="color:var(--gold)">3 · Unified Q&amp;A across maps</h3>
+      <p style="color:#e6eaf5;" class="small">The server sees every station's position: "where is the exhibit I was at before?" across rooms, shared routes between maps, and a per-user session that follows the visitor from map to map.</p>
+    </div>
+  </div>
+  <div style="margin-top:0.35in; display:grid; grid-template-columns: 1fr 1fr; gap:0.4in;">
+    <div>
+      <h3 style="color:#fff">Also on the list</h3>
+      <ul class="small" style="color:#e6eaf5;">
+        <li>Boot-to-app image for the UNO Q (systemd unit, auto-pair to glasses)</li>
+        <li>Powered USB-C hub → camera hosted by the board, no laptop in the loop</li>
+        <li>Map authoring: photograph any tactile map + OSM extract → new model</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:#fff">Why this matters</h3>
+      <p class="small" style="color:#e6eaf5;">Tactile maps exist in transit hubs, campuses and museums today, mostly unused because they say so little. A camera and a board per sheet turns each one into a place you can ask questions of — without touching the map itself.</p>
+    </div>
+  </div>
+  <div class="footer"><span>MapIO</span><span>8 / 9</span></div>
+</section>
+
+<!-- 9. Demo / thanks -->
+<section class="slide">
+  <p class="kicker">Demo</p>
+  <h2>See it work.</h2>
+  <div class="cols two">
+    <div>
+      <p style="font-size:16pt; margin-bottom:0.25in;">Demo video: NYC street map on a Lighthouse-SF tactile sheet, perception on the UNO Q, speech in the Ray-Ban Meta glasses, questions answered by Gemma on the X Elite.</p>
+      <div class="card">
+        <h3>Stack</h3>
+        <p class="small">OpenCV SIFT · MediaPipe Hands · BlueZ 5.82 + PipeWire · espeak-ng · Qualcomm AI Hub GenieX · Gemma 4 E2B (Q4) · Python on Debian (UNO Q) and Windows on ARM64 (X Elite)</p>
+      </div>
+      <div class="card" style="margin-top:0.18in;">
+        <h3>Maps ready today</h3>
+        <p class="small">New York (Midtown), Detroit (Conant), BART system map</p>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.18in; align-content:start;">
+      <figure><img src="images/template_new_york.png" alt="New York map template"><figcaption>New York</figcaption></figure>
+      <figure><img src="images/template_detroit.png" alt="Detroit Conant map template"><figcaption>Detroit · Conant</figcaption></figure>
+      <figure style="grid-column: span 2;"><img src="images/template_bart.png" alt="BART system map template" style="max-height:1.85in; object-fit:contain; background:#fff;"><figcaption>BART</figcaption></figure>
+    </div>
+  </div>
+  <div class="footer"><span>MapIO</span><span>9 / 9</span></div>
+</section>
+
+<script>
+  // Dev aid: ?slide=N shows only that slide (used for per-slide screenshots). No effect on PDF export.
+  (function(){ const n = new URLSearchParams(location.search).get("slide"); if(!n) return;
+    document.querySelectorAll(".slide").forEach((s,i)=>{ if(i+1!=n) s.style.display="none"; }); })();
+</script>
+</body>
+</html>
