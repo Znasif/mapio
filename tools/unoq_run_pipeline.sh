@@ -16,7 +16,8 @@ case "${1:-start}" in
   start)
     shift; stop; sleep 1
     bluetoothctl connect 98:59:49:36:6F:D1 >/dev/null 2>&1   # no-op if already connected
-    nohup "$PY" -u /home/arduino/unoq_perception_pipeline.py --remap "$@" > "$LOG" 2>&1 &
+    # Extra args pass through, e.g. `start --remap` when the BART tactile map is under the camera.
+    nohup "$PY" -u /home/arduino/unoq_perception_pipeline.py "$@" > "$LOG" 2>&1 &
     echo "[board] pipeline pid $!"
     ;;
 esac

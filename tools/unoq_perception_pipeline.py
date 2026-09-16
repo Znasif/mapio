@@ -7,7 +7,8 @@ Pipeline:
 2. Computes SIFT map homography and locks once confidence threshold is met.
 3. Detects hand and index fingertip using MediaPipe.
 4. Maps fingertip to tactile map coordinates (with optional temporary remap).
-5. Queries topological graph (nearest POI / street in new_york.json).
+5. Resolves the fingertip with mapio's own graph engine (src/graph + src/position):
+   POI / intersection / street with the same thresholds as the laptop app.
 6. Annotates video frame with map boundary, fingertip, and telemetry HUD.
 7. Serves visual debug stream and web dashboard on port 5001 over USB-C (via ADB forward).
 """
@@ -30,6 +31,13 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import requests
+
+# The board runs the laptop app's own graph engine: `src/` is pushed next to this file
+# (unoq_start.ps1 does it) and is importable because sys.path[0] is the script directory.
+from src.config import config
+from src.graph import Graph
+from src.position import PositionHandler
+from src.utils import Coords
 
 # On the Uno Q (aarch64, opencv 5.0) SIFT segfaults after a few frames when OpenCV's
 # parallel backend runs alongside MediaPipe's XNNPACK threads. Single-threaded SIFT
@@ -117,17 +125,16 @@ class UnoQCameraReceiver:
 
 
 class SpeechAnnouncer:
-    """Speaks POI names through the board's default PipeWire sink (the Ray-Ban Meta glasses).
+    """Speaks position descriptions through the board's default PipeWire sink (the glasses).
 
     espeak-ng renders each utterance to a WAV which pw-play sends to the default sink, so
-    audio follows whatever `wpctl set-default` points at. Announcement rules mirror mapio's
-    PositionAnnouncer at a basic level: speak a POI once the fingertip has dwelt on it for
-    `dwell_s`, never repeat the same POI back-to-back, and re-arm once the finger leaves.
+    audio follows whatever `wpctl set-default` points at.
     """
 
-    def __init__(self, poi_radius_ft: float = 0.0, dwell_s: float = 0.4, rate_wpm: int = 175):
-        self.poi_radius_ft = poi_radius_ft
-        self.dwell_s = dwell_s
+    DETAILED_NODE_DELAY = 1.0   # seconds, same as PositionAnnouncer
+    DETAILED_DELAY = 2.0
+
+    def __init__(self, rate_wpm: int = 175):
         self.rate_wpm = rate_wpm
         self.enabled = shutil.which("espeak-ng") is not None and shutil.which("pw-play") is not None
         if not self.enabled:
@@ -137,8 +144,9 @@ class SpeechAnnouncer:
         self.env = dict(os.environ)
         self.env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 
-        self.candidate: Optional[str] = None
-        self.candidate_since = 0.0
+        self.current: Optional[str] = None
+        self.current_since = 0.0
+        self.detailed_done = False
         self.last_spoken: Optional[str] = None
         self.map_announced = False
         self.lock = threading.Lock()
@@ -172,7 +180,12 @@ class SpeechAnnouncer:
                 print(f"[Speech] playback failed: {e}", flush=True)
 
     def update(self, meta: Dict) -> None:
-        """Feed per-frame perception metadata; decides what (if anything) to say."""
+        """Feed per-frame perception metadata; decides what (if anything) to say.
+
+        Mirrors mapio's PositionAnnouncer: say the element's short description (street / POI /
+        intersection name) when the finger lands on a new element, then its complete
+        description once the finger has stayed still on it for DETAILED_DELAY seconds.
+        """
         if not self.enabled:
             return
         now = time.time()
@@ -181,29 +194,31 @@ class SpeechAnnouncer:
             self.map_announced = True
             self.say("Map detected")
 
-        poi = meta.get("nearest_poi")
-        dist = meta.get("poi_dist_feet") or 0.0
-        # radius <= 0 means "always speak the nearest POI" (CamIO behaviour; also the only sane
-        # choice under --remap, where the BART map is projected onto the NY graph and the
-        # nearest POI is routinely hundreds of feet away).
-        in_range = self.poi_radius_ft <= 0 or dist <= self.poi_radius_ft
-        on_poi = poi is not None and meta.get("finger_map") is not None and in_range
-
-        if not on_poi:
-            # Finger lifted / wandered off: re-arm so the same POI can be spoken again later.
-            self.candidate = None
-            self.last_spoken = None
+        desc = meta.get("nearest_poi")          # short description, "" / None when off-graph
+        if not desc or meta.get("finger_map") is None:
+            self.current = None
+            self.current_since = 0.0
+            self.detailed_done = False
             return
 
-        if poi != self.candidate:
-            self.candidate = poi
-            self.candidate_since = now
+        if desc != self.current:
+            self.current = desc
+            self.current_since = now
+            self.detailed_done = False
+            if desc != self.last_spoken:
+                self.last_spoken = desc
+                print(f"[Speech] {meta.get('element_type')} {desc!r} at {meta.get('poi_dist_feet')} ft", flush=True)
+                self.say(desc)
             return
 
-        if poi != self.last_spoken and now - self.candidate_since >= self.dwell_s:
-            self.last_spoken = poi
-            print(f"[Speech] fingertip {dist} ft from {poi!r} (radius {self.poi_radius_ft} ft)", flush=True)
-            self.say(poi)
+        delay = self.DETAILED_NODE_DELAY if meta.get("element_type") == "node" else self.DETAILED_DELAY
+        detail = meta.get("detail") or ""
+        if (not self.detailed_done and meta.get("movement") == "none"
+                and now - self.current_since >= delay and detail and detail != self.last_spoken):
+            self.detailed_done = True
+            self.last_spoken = detail
+            self.say(detail)
+
 
 
 class MapPerception:
@@ -245,27 +260,20 @@ class MapPerception:
             min_tracking_confidence=0.5,
         )
 
-        # Graph Data (for POI matching)
-        self.pois = []
-        self.feets_per_pixel = 2.09789
+        # Graph engine: the same Graph + PositionHandler mapio.py uses on the laptop, so the
+        # board resolves the fingertip to a POI / intersection / street with identical rules
+        # (0.25 in / 0.15 in / 0.3 in thresholds, gravity, position averaging).
+        self.position_handler = None
         if model_json_path and os.path.isfile(model_json_path):
-            try:
-                with open(model_json_path, "r", encoding="utf-8") as f:
-                    model_data = json.load(f)
-                self.feets_per_pixel = model_data.get("feets_per_pixel", 2.09789)
-                raw_pois = model_data.get("graph", {}).get("points_of_interest", [])
-                for p in raw_pois:
-                    coords = p.get("coords") or p.get("pos")
-                    name = p.get("name", "Unknown")
-                    if coords and len(coords) >= 2:
-                        self.pois.append({
-                            "name": name,
-                            "x": coords[0] * self.feets_per_pixel,
-                            "y": coords[1] * self.feets_per_pixel,
-                        })
-                print(f"[Perception] Loaded {len(self.pois)} POIs from {model_json_path}")
-            except Exception as e:
-                print(f"[Perception] Warning: failed to load graph POIs: {e}")
+            with open(model_json_path, "r", encoding="utf-8") as f:
+                model_data = json.load(f)
+            config.load_model(model_data)
+            self.graph = Graph(model_data["graph"])
+            self.position_handler = PositionHandler()
+            print(f"[Perception] Graph loaded: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges, "
+                  f"{len(self.graph.pois)} POIs, {config.feets_per_pixel:.3f} ft/px", flush=True)
+        else:
+            print(f"[Perception] Warning: model not found at {model_json_path}; no position announcements", flush=True)
 
     def update_homography(self, frame: np.ndarray) -> bool:
         """
@@ -337,6 +345,9 @@ class MapPerception:
         finger_map: Optional[Tuple[float, float]] = None
         nearest_poi: Optional[str] = None
         poi_dist: float = 0.0
+        element_type: Optional[str] = None
+        detail: str = ""
+        movement: str = "none"
 
         if results.multi_hand_landmarks:
             best_candidate = None
@@ -394,20 +405,20 @@ class MapPerception:
                 cv2.circle(annotated, finger_cam, 8, (0, 0, 255), -1)
                 cv2.circle(annotated, finger_cam, 12, (0, 255, 255), 2)
 
-                # Query nearest POI
-                if finger_map and self.pois:
-                    pos_ft_x = finger_map[0] * self.feets_per_pixel
-                    pos_ft_y = finger_map[1] * self.feets_per_pixel
-                    best_d = float("inf")
-                    best_p = None
-                    for p in self.pois:
-                        d = math.hypot(p["x"] - pos_ft_x, p["y"] - pos_ft_y)
-                        if d < best_d:
-                            best_d = d
-                            best_p = p["name"]
-                    if best_p:
-                        nearest_poi = best_p
-                        poi_dist = round(best_d, 1)
+                # Resolve fingertip -> graph element exactly like mapio.py's main loop
+                if finger_map and self.position_handler is not None:
+                    # process_position() converts template pixels -> feet itself
+                    self.position_handler.process_position(Coords(*finger_map))
+                    position = self.position_handler.get_position_info()
+                    if position.graph_element is not None:
+                        nearest_poi = position.description
+                        poi_dist = round(position.distance, 1)
+                        element_type = "poi" if position.is_poi() else "node" if position.is_node() else "edge"
+                        detail = position.complete_description
+                        movement = position.movement.name.lower()
+        elif self.position_handler is not None:
+            # No hand in view: drop the position buffer so a stale average can't be announced
+            self.position_handler.clear()
 
         # 3. Render HUD Overlay
         overlay = annotated.copy()
@@ -415,7 +426,7 @@ class MapPerception:
         cv2.addWeighted(overlay, 0.75, annotated, 0.25, 0, annotated)
 
         # Status text lines
-        mode_str = "BART->NY (Remapped)" if self.remap else "Native Mode"
+        mode_str = "BART->NY (Remapped)" if self.remap else "New York (native)"
         has_map = self.homography is not None
         map_str = f"TRACKING ({self.inliers} inliers)" if has_map else "SEARCHING MAP..."
         map_col = (0, 255, 0) if has_map else (0, 165, 255)
@@ -430,7 +441,7 @@ class MapPerception:
             cv2.putText(annotated, "Finger: Not Detected", (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (120, 120, 120), 1)
 
         if nearest_poi:
-            cv2.putText(annotated, f"POI: {nearest_poi[:18]} ({poi_dist}ft)", (20, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 255, 100), 1)
+            cv2.putText(annotated, f"{(element_type or '').upper()}: {nearest_poi[:18]} ({poi_dist}ft)", (20, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 255, 100), 1)
         else:
             cv2.putText(annotated, "POI: --", (20, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (120, 120, 120), 1)
 
@@ -441,6 +452,9 @@ class MapPerception:
             "finger_map": finger_map,
             "nearest_poi": nearest_poi,
             "poi_dist_feet": poi_dist,
+            "element_type": element_type,
+            "detail": detail,
+            "movement": movement,
             "remap": self.remap,
         }
         return annotated, meta
@@ -543,7 +557,7 @@ class VisualDebugServer:
                 const data = await res.json();
                 document.getElementById('fps').innerText = data.fps;
                 document.getElementById('map').innerText = data.map_detected ? 'TRACKING (' + data.inliers + ' inliers)' : 'Searching...';
-                document.getElementById('poi').innerText = data.nearest_poi ? (data.nearest_poi + ' (' + data.poi_dist_feet + 'ft)') : 'None';
+                document.getElementById('poi').innerText = data.nearest_poi ? ((data.element_type || '') + ': ' + data.nearest_poi + ' (' + data.poi_dist_feet + 'ft)') : 'None';
             } catch(e) {}
         }, 500);
     </script>
@@ -599,7 +613,6 @@ def main():
     parser.add_argument("--model", default="/home/arduino/models/new_york/new_york.json", help="Model JSON for topological graph")
     parser.add_argument("--remap", action="store_true", help="Remap BART template coords to New York graph bounds")
     parser.add_argument("--no-speech", action="store_true", help="Disable spoken POI announcements (espeak-ng -> default PipeWire sink)")
-    parser.add_argument("--poi-radius-ft", type=float, default=0.0, help="Only speak a POI within this many feet of the fingertip; 0 = always speak the nearest (default: 0)")
     args = parser.parse_args()
 
     print("\n========================================================")
@@ -626,7 +639,7 @@ def main():
 
         debug_server = VisualDebugServer(port=args.port)
 
-        speech = None if args.no_speech else SpeechAnnouncer(poi_radius_ft=args.poi_radius_ft)
+        speech = None if args.no_speech else SpeechAnnouncer()
         if speech and speech.enabled:
             speech.say("Uno Q ready")
 
