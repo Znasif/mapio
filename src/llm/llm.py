@@ -106,7 +106,8 @@ class LLM(Module):
 
         # The window "auto" is fitting into. The client cannot ask the server
         # for it, so it is stated here and must match the tier's ctx-size.
-        self.ctx_size = int(os.environ.get("LLM_CTX_SIZE", 8192))
+        default_ctx = 32768 if (base_url and formatter is None) else 8192
+        self.ctx_size = int(os.environ.get("LLM_CTX_SIZE", default_ctx))
 
         # Characters per token, re-derived from every response: the server
         # reports exactly how many tokens the messages we just sent became, so
@@ -360,7 +361,7 @@ class LLM(Module):
 def convert_assistant_message(msg: ChatCompletionMessage) -> ChatCompletionMessageParam:
     return ChatCompletionAssistantMessageParam(
         role="assistant",
-        content=msg.content,
+        content=msg.content or "",
         tool_calls=convert_tool_calls(msg.tool_calls),
     )
 

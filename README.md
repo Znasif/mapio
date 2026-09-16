@@ -1,145 +1,106 @@
-# MapIO
+# MapIO (Qualcomm Snapdragon X Elite Edition)
 
-## Environment setup:
+MapIO is an accessible audio-tactile map system. This branch (`qcom`) is configured for **Windows on ARM64** running on Qualcomm Snapdragon X Elite laptops with on-device LLM inference via **Qualcomm AI Hub GenieX** and native Windows speech and audio.
 
-This version of MapIO runs with Python 3.8. Once installed, the required packages can be set up with the following commands.</br>
-If you are on an Apple Silicon machine, please follow the [Apple Silicon-specific instructions](#for-apple-silicon-machines) before running these commands.
+---
 
-```bash
-# Required for the PyAudio library
-brew install portaudio
+## Environment Setup
 
-# Create and activate a Python virtual environment
-python3.8 -m venv mapio-llm    # or python3, depending on your setup
-cd mapio-llm
-source bin/activate
+### 1. Install `uv` & Python 3.11
+MapIO uses `uv` for fast package resolution and virtual environment management on Windows ARM64.
 
-# Clone the repository
-git clone https://github.com/Coughlan-Lab/simple_camio.git
-mv simple_camio src
-cd src
-git switch llm
+In PowerShell:
+```powershell
+# Create virtual environment with Python 3.11
+uv venv --python 3.11
 
-# Install Python libraries
-pip install -r requirements.txt
-
-cp example.env .env
+# Install dependencies
+uv pip install -r requirements.txt
 ```
 
-Edit the `.env` file to set the correct values for the environment variables.
+---
 
-### Environment variables:
+## On-Device LLM Setup (Qualcomm AI Hub GenieX)
 
-The following environment variables must be set in the `.env` file:
+MapIO runs locally on the Snapdragon X Elite using **GenieX** to execute quantized Gemma models on the Hexagon NPU and Adreno GPU.
 
-- `OPENAI_API_KEY`: API key for the OpenAI LLM model, can be obtained [here](https://platform.openai.com/api-keys)
-- `GOOGLE_SPEECH_CLOUD_KEY_FILE`: path to the Google Cloud service account key file, follow the guide below to create one.
-- `GOOGLE_ROUTES_API_KEY`: API key for the Google Routes API, follow the guide below to create one.
-
-### Google Cloud project setup:
-
-For the speech-to-text and the routing systems to work, a Google Cloud project must be set up with the following APIs enabled:
-
-- Speech-to-text API
-- Routes API
-
-To create a Google Cloud project and enable the required APIs, follow this steps:
-
-1. Access this [link](https://console.cloud.google.com/welcome) and create a new project.
-2. Set the new project as active by selecting it from the project dropdown menu in the top left corner
-3. In the search bar at the top of the page, search for "Cloud Speech-to-Text API" and enable it.
-4. Do the same for the "Routes API".
-5. In the search bar, search for "Credentials".
-6. Click on "Create credentials" and select "API key". This will generate a new API key that you can use as the `GOOGLE_ROUTES_API_KEY`.
-7. Click on "Create credentials" again and select "Service account key". Create a new service account with the role "Owner". Click on the newly created service account and in the "Keys" tab, click on "Add key" and select "JSON". This will download a JSON file that you can use as the `GOOGLE_SPEECH_CLOUD_KEY_FILE`.
-
-### For Apple Silicon machines:
-
-On Apple Silicon machines, the PyAudio library may not work natively and will throw an exception when imported. Therefore, it’s necessary to use the Intel version of Python.</br>
-Here's how to set it up:
-
-1. Verify if Rosetta is installed:
-
-```bash
-pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto
+### 1. Pull the Model
+```powershell
+geniex pull google/gemma-4-E2B-it-qat-q4_0-gguf
 ```
 
-2. If Rosetta is not installed, run the following command to install it:
+### 2. Launch the GenieX Server
+Run the local OpenAI-compatible server with extended context for map reasoning:
+```powershell
+geniex serve --nctx 24576
+```
+The server will listen at `http://127.0.0.1:18181/v1`.
 
-```bash
-softwareupdate --install-rosetta
+---
+
+## Configuration (`.env`)
+
+Create or edit your `.env` file in the project root:
+
+```env
+# Local GenieX LLM
+LLM_BASE_URL="http://127.0.0.1:18181/v1"
+LLM_MODEL="google/gemma-4-E2B-it-qat-q4_0-gguf:Q4_0"
+OPENAI_API_KEY="local"
+
+# Full-graph prompt mode (Option B: runs without external embedding server)
+MAPIO_DISABLE_RETRIEVAL="1"
+LLM_CTX_SIZE="32768"
+
+# Speech-to-Text: "google_free" (zero-config web speech), "whisper" (local), or "google" (cloud service account)
+STT_BACKEND="google_free"
 ```
 
-3. Enable Rosetta for your terminal:
-   Go to Finder > Applications, make a copy of your preferred terminal (e.g., Terminal or iTerm), rename the copy, then right-click and select "Get Info". Check the box for "Open using Rosetta". Use this new terminal to run the following commands.
+---
 
-4. Install the Intel version of Homebrew:
+## Running MapIO
 
-```bash
-arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+With your camera connected and pointing down at the map:
 
-(echo; echo 'eval "$(/usr/local/bin/brew shellenv)"') >> /Users/<YOUR USERNAME>/.zprofile
-eval "$(/usr/local/bin/brew shellenv)"
+```powershell
+# Run with the New York map
+.venv\Scripts\python.exe mapio.py --model new_york --debug
+
+# Or specify a custom camera and microphone
+.venv\Scripts\python.exe mapio.py --model new_york --camera 0 --microphone 1 --debug
 ```
 
-5. Create an alias for Intel Homebrew:
-
-```bash
-echo 'alias ibrew="/usr/local/bin/brew"' >> ~/.zshrc
-source ~/.zshrc
+For all command-line options:
+```powershell
+.venv\Scripts\python.exe mapio.py --help
 ```
 
-6. Install the Intel version of Python 3.8:
+---
 
-```bash
-ibrew install python@3.8
-```
+## Speech & Audio on Windows
 
-7. Create an alias for Intel Python 3.8:
+- **Text-to-Speech (TTS)**: Uses Windows **SAPI5** through `pyttsx3`. It operates completely offline with zero latency.
+- **Audio Feedback**: Uses `pygame.mixer` with Windows DirectSound/WASAPI to generate spatial panning and navigation earcons.
+- **Speech-to-Text (STT)**: 
+  - `STT_BACKEND="google_free"`: Uses Chromium Web Speech API (free, requires no Google Cloud credentials).
+  - `STT_BACKEND="whisper"`: Runs local offline Whisper transcription.
+  - `STT_BACKEND="server"`: Posts audio to a local HTTP STT endpoint (`STT_SERVER="http://localhost:11435"`).
 
-```bash
-echo 'alias ipython3.8="/usr/local/bin/python3.8"' >> ~/.zshrc
-source ~/.zshrc
-```
+---
 
-Now, proceed with the general setup instructions from [Environment Setup](#environment-setup), replacing `python3.8` with `ipython3.8` and `brew` with `ibrew`.
-Additionally, once the virtual environment is activated and you are in the `src` folder, you might need to run the following command:
-
-```bash
-alias ipython3.8="../bin/python"
-```
-
-## Running the code:
-
-To run the code, simply run the following command:
-
-```bash
-python3.8 mapio.py --model <path_to_model>
-```
-
-Replace python3.8 with ipython3.8 if you're on an Apple Silicon Machine.
-
-Root privileges may be required to run the code.
-
-For a list of all available command line arguments, run:
-
-```bash
-python3.8 mapio.py --help
-```
-
-Enabling debug mode (`--debug`) is highly recommended to visualize the user's finger movements and the activated points of interest.
-
-## Keyboard shortcuts:
+## Keyboard Shortcuts
 
 - `q`: Quit the application
 - `Space`: Start/Stop LLM question recording
-- `Enter`: Stop TTS
-- `Escape`: Pause/Resume TTS
-- `n`: Disable navigation mode
+- `Enter`: Stop TTS speech
+- `Escape`: Pause/Resume TTS speech
+- `n`: Cancel navigation mode
 - `d`: Play map description
-- `m`: Fix map model detection
+- `m`: Fix map model detection / homography
 
-## Model creation:
+---
+
+## Model Creation
 
 A software utility for creating map models is available at:
 [MapIO Model Creation Utility](https://github.com/Matteo-3033/MapIO-model-creation-utility)

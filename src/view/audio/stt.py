@@ -34,28 +34,21 @@ from src.modules_repository import Module
 # invocation, the only way the legacy recogniser can hold a TCC grant.
 # legacyspeechcli is the accurate one -- it is the only build where contextual
 # hints actually bias POI names. See tools/macos_stt/README.md.
-BACKEND = os.getenv("STT_BACKEND", "google").lower()
+BACKEND = os.getenv(
+    "STT_BACKEND",
+    "google_free" if not os.getenv("GOOGLE_SPEECH_CLOUD_KEY_FILE") else "google",
+).lower()
 APPLE_BIN = os.getenv("STT_APPLE_BIN", "tools/macos_stt/legacyspeechcli.app")
 STT_SERVER = os.getenv("STT_SERVER", "").rstrip("/")
 
 if BACKEND == "google":
-    # Importing this up front is deliberate upstream: it keeps the first
-    # recognize_google_cloud() call from paying the import cost in the middle
-    # of a recording. Conditional now, because on the "apple" path it is a
-    # cloud library that is never called -- and it pulls in pkg_resources,
-    # which setuptools no longer installs into a fresh venv by default, so a
-    # local-only install died at import on a dependency it does not use.
     try:
         from google.cloud import speech  # noqa: F401  (imported for its side effect)
     except ImportError:
-        # The packaged macOS build omits google-cloud-speech entirely, but
-        # STT_BACKEND still defaults to "google" so upstream behaviour is
-        # unchanged for anyone who has it. Reaching here means the two
-        # disagree, and the bare ModuleNotFoundError names neither remedy.
         raise SystemExit(
             "\nSTT_BACKEND is 'google' but google-cloud-speech is not installed.\n"
-            "Set STT_BACKEND=apple to use the on-device recogniser, or install "
-            "the cloud client with: pip install google-cloud-speech\n"
+            "Set STT_BACKEND=google_free for free web speech, STT_BACKEND=whisper for local Whisper, "
+            "or install the cloud client with: pip install google-cloud-speech\n"
         )
 
 
@@ -348,14 +341,35 @@ class STT(Module):
         try:
             self.__processing_audio = True
 
-            if BACKEND == "apple":
+            if BACKEND in ("apple", "server", "remote") or (STT_SERVER and BACKEND != "google"):
                 return self.__recognize_apple(audio)
+            elif BACKEND == "whisper":
+                return self.__recognize_whisper(audio)
+            elif BACKEND in ("google_free", "web"):
+                return self.__recognize_google_free(audio)
             return self.__recognize_google(audio)
         except Exception as e:
             print(f"STT error: {e}")
             return None
         finally:
             self.__processing_audio = False
+
+    def __recognize_google_free(self, audio: sr.AudioData) -> Optional[str]:
+        try:
+            return str(self.recognizer.recognize_google(audio)).strip()
+        except sr.UnknownValueError:
+            return None
+        except Exception as e:
+            print(f"STT error (google_free): {e}")
+            return None
+
+    def __recognize_whisper(self, audio: sr.AudioData) -> Optional[str]:
+        try:
+            model = os.getenv("WHISPER_MODEL", "base.en")
+            return str(self.recognizer.recognize_whisper(audio, model=model)).strip()
+        except Exception as e:
+            print(f"STT error (whisper): {e}")
+            return None
 
     def __recognize_google(self, audio: sr.AudioData) -> Optional[str]:
         result = self.recognizer.recognize_google_cloud(

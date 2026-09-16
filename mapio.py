@@ -59,7 +59,7 @@ def build_prompt_formatter(
     """
 
     base_url = os.environ.get("LLM_BASE_URL")
-    if not base_url:
+    if not base_url or os.environ.get("MAPIO_DISABLE_RETRIEVAL", "0").lower() in ("1", "true", "yes"):
         return None
 
     retrieval = PlaceRetrieval(base_url, model=os.environ.get("LLM_EMBED_MODEL", "l1"))

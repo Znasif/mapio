@@ -142,56 +142,82 @@ def main():
     print(f"\nSending question to LLM: '{args.question}'...")
     print(f"Active tools offered: {len(tools)}")
     
-    response = send_chat_completion(server_url, model_name, messages, tools)
-    choice = response.get("choices", [{}])[0]
-    msg = choice.get("message", {})
-    tool_calls = msg.get("tool_calls", [])
+    round_num = 1
+    max_rounds = 4
+    final_text = ""
+    while round_num <= max_rounds:
+        print(f"\n[Round {round_num}: Sending request to LLM...]")
+        response = send_chat_completion(server_url, model_name, messages, tools=tools)
+        choice = response.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+        tool_calls = msg.get("tool_calls", [])
+        content = msg.get("content") or ""
 
-    if not tool_calls:
-        print("\n[LLM Direct Response (No Tool Called)]")
-        print(msg.get("content", ""))
-        return
+        if content:
+            final_text += content + "\n"
 
-    print(f"\n[Turn 1: LLM Tool Call Received]")
-    for tc in tool_calls:
-        fn_name = tc["function"]["name"]
-        fn_args = tc["function"]["arguments"]
-        print(f"  Tool Name: {fn_name}")
-        print(f"  Arguments: {fn_args}")
+        clean_msg = {
+            "role": "assistant",
+            "content": content,
+        }
+        if tool_calls:
+            clean_msg["tool_calls"] = [
+                {
+                    "id": tc.get("id", f"call_{round_num}_{i}"),
+                    "type": "function",
+                    "function": {
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"],
+                    },
+                }
+                for i, tc in enumerate(tool_calls)
+            ]
+        messages.append(clean_msg)
 
-        # Construct ChatCompletionMessageToolCall object from openai types or generic object
-        class FunctionMock:
-            def __init__(self, name, arguments):
-                self.name = name
-                self.arguments = arguments
+        if not tool_calls:
+            print("[LLM Finished Tool Loop]")
+            break
 
-        class ToolCallMock:
-            def __init__(self, call_id, name, arguments):
-                self.id = call_id
-                self.type = "function"
-                self.function = FunctionMock(name, arguments)
+        for i, tc in enumerate(tool_calls):
+            fn_name = tc["function"]["name"]
+            fn_args = tc["function"]["arguments"]
+            tc_id = tc.get("id", f"call_{round_num}_{i}")
+            print(f"  Tool Call: {fn_name}")
+            print(f"  Arguments: {fn_args}")
 
-        tool_call_obj = ToolCallMock(
-            call_id=tc.get("id", "call_123"),
-            name=fn_name,
-            arguments=fn_args
-        )
+            class FunctionMock:
+                def __init__(self, name, arguments):
+                    self.name = name
+                    self.arguments = arguments
 
-        print("\n[Executing ACTUAL Graph Calculation on Real Map Data...]")
-        tool_result_param = formatter.handle_tool_call(tool_call_obj)
-        print(f"  ACTUAL Graph Tool Result: {tool_result_param.get('content')}")
+            class ToolCallMock:
+                def __init__(self, call_id, name, arguments):
+                    self.id = call_id
+                    self.type = "function"
+                    self.function = FunctionMock(name, arguments)
 
-        messages.append(msg)
-        messages.append(tool_result_param)
+            tool_call_obj = ToolCallMock(
+                call_id=tc_id,
+                name=fn_name,
+                arguments=fn_args
+            )
 
-    print("\n[Turn 2: Requesting LLM Final Narration based on Real Graph Data...]")
-    turn2_resp = send_chat_completion(server_url, model_name, messages, tools=None)
-    final_text = turn2_resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+            print("  [Executing Graph Tool on Real Map Data...]")
+            tool_result_param = formatter.handle_tool_call(tool_call_obj)
+            tool_content = str(tool_result_param.get("content", ""))
+            print(f"  Tool Result: {tool_content}")
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": tool_content,
+            })
+
+        round_num += 1
 
     print("\n" + "="*80)
     print("FINAL REAL NARRATION RESULT:")
     print("="*80)
-    print(final_text)
+    print(final_text.strip())
     print("="*80)
 
 if __name__ == "__main__":
